@@ -35,10 +35,11 @@ export function vistaAjustes() {
 
     <section class="card">
       <div class="card-head"><h2>Datos y copias de seguridad</h2></div>
-      <p class="muted">Todo se guarda solo en este dispositivo y navegador. Para usarlo en el móvil y en el Mac, exporta la copia en uno e impórtala en el otro. Última copia: <b>${a.ultimoBackup ? fmtFecha(a.ultimoBackup) : 'nunca'}</b>.</p>
+      <p class="muted">Todo se guarda solo en este dispositivo y navegador. Para usarlo en el móvil y en el Mac, exporta la copia en uno e impórtala en el otro. La copia JSON no lleva las fotos y documentos: para pasarlos usa la copia con documentos (ZIP). Última copia: <b>${a.ultimoBackup ? fmtFecha(a.ultimoBackup) : 'nunca'}</b>. Documentos guardados: <b>${s.docs.length}</b>.</p>
       <div class="btn-row">
         <button class="btn btn-primary" data-action="exportar-json">${raw(ICON.download)}<span>Copia completa (JSON)</span></button>
-        <label class="btn">${raw(ICON.upload)}<span>Restaurar copia (JSON)</span><input type="file" accept=".json,application/json" data-import="json" hidden></label>
+        <button class="btn" data-action="exportar-zip">${raw(ICON.download)}<span>Copia con documentos (ZIP)</span></button>
+        <label class="btn">${raw(ICON.upload)}<span>Restaurar copia (JSON o ZIP)</span><input type="file" accept=".json,.zip,application/json,application/zip" data-import="json" hidden></label>
       </div>
       <h3 class="sub-h">Exportar a CSV (Excel, Numbers)</h3>
       <div class="btn-row">

@@ -38,6 +38,7 @@ export function estadoVacio() {
     gastos: [],
     recurrentes: [],
     hipotecas: [],
+    docs: [], // fichas de documentos adjuntos (los archivos están en IndexedDB)
   };
 }
 
@@ -119,7 +120,7 @@ export function migrar(s) {
   const base = estadoVacio();
   const out = { ...base, ...s, ajustes: { ...base.ajustes, ...(s.ajustes || {}) } };
   out.ajustes.plantillas = { ...PLANTILLAS, ...(s.ajustes?.plantillas || {}) };
-  for (const k of ['titulares', 'pisos', 'unidades', 'contratos', 'cobros', 'reservas', 'gastos', 'recurrentes', 'hipotecas']) {
+  for (const k of ['titulares', 'pisos', 'unidades', 'contratos', 'cobros', 'reservas', 'gastos', 'recurrentes', 'hipotecas', 'docs']) {
     if (!Array.isArray(out[k])) out[k] = [];
   }
   const previa = Number(s.version) || 1;

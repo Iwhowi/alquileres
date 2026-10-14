@@ -12,10 +12,11 @@ import { vistaCalendario } from './views/calendario.js';
 import { vistaFiscal, calculoFiscal } from './views/fiscal.js';
 import { vistaAjustes } from './views/ajustes.js';
 import * as F from './forms.js';
+import { guardarArchivo, leerBlob, ponerBlob, crearZip, leerZip, extension, urlDe } from './docs.js';
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.1.0';
+app.version = '2.2.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -103,6 +104,7 @@ function render({ oculto = false } = {}) {
     }
   } else window.scrollTo(0, scroll);
   pildoras(main);
+  main.querySelectorAll('img[data-thumb]').forEach(async (img) => { img.src = (await urlDe(img.dataset.thumb, true)) || ''; });
   document.title = `${NAV.find((n) => n[0] === activa)?.[1] || 'Panel'} · Alquileres`;
 }
 app.render = render;
@@ -224,6 +226,12 @@ const acciones = {
     document.querySelectorAll('#dialogo [data-ir]').forEach((b) => b.addEventListener('click', () => { F.cerrarDialogo(); location.hash = `#/${b.dataset.ir}`; }));
   },
   'mas-gastos': () => { app.ui.gastosLimite = (app.ui.gastosLimite || 60) + 60; render(); },
+  'ver-sin-just': (el, e) => { e.preventDefault(); Object.assign(app.ui.gastos, { anio: el.dataset.anio, mes: '', cat: 'sinjust', q: '', piso: '' }); location.hash = '#/gastos'; },
+  'filtro-sinjust': () => { app.ui.gastos.cat = app.ui.gastos.cat === 'sinjust' ? '' : 'sinjust'; render(); },
+  'zip-gestor': () => zipGestor(false),
+  'compartir-gestor': () => zipGestor(true),
+  'exportar-zip': () => exportarZipCompleto(),
+  'ver-doc': async (el) => { const { verDoc } = await import('./adjuntos.js'); verDoc(app.s.docs.find((d) => d.id === el.dataset.id)); },
   'tip-visto': () => { app.s.ajustes.tipEdificio = true; commit(); },
   'avisos-todos': () => { app.ui.avisosTodos = !app.ui.avisosTodos; render(); },
   'actualizar-renta': (el) => F.actualizarRenta(el.dataset.id),
@@ -293,6 +301,7 @@ document.addEventListener('change', (e) => {
     return;
   }
   if (el.dataset.import) importar(el);
+  if (el.matches('[data-rapido-foto]')) fotoRapida(el);
 });
 
 let tBusqueda;
@@ -316,7 +325,7 @@ document.addEventListener('submit', (e) => {
   const d = Object.fromEntries(new FormData(form).entries());
   if (form.dataset.form === 'gasto-rapido') {
     d.extraordinario = form.elements.extraordinario.checked;
-    F.gastoRapido(d);
+    if (F.gastoRapido(d, app.ui.adjRapido || [])) app.ui.adjRapido = [];
     setTimeout(() => document.querySelector('[data-form="gasto-rapido"] [name="importe"]')?.focus(), 0);
   }
   if (form.dataset.form === 'ajustes') {
@@ -346,6 +355,24 @@ function tip(e) {
 document.addEventListener('pointerover', tip);
 document.addEventListener('focusin', tip);
 document.addEventListener('pointerleave', (e) => { if (e.target.closest?.('[data-chart]')) e.target.querySelector('.chart-tip').hidden = true; }, true);
+
+/** Foto del ticket desde el alta rápida de gastos: se guarda y se asocia al gasto al pulsar «Añadir». */
+async function fotoRapida(input) {
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  const cuenta = document.querySelector('[data-rapido-cuenta]');
+  if (cuenta) cuenta.textContent = 'Guardando…';
+  try {
+    app.ui.adjRapido = [...(app.ui.adjRapido || []), await guardarArchivo(file, uid())];
+  } catch (e) {
+    console.error(e);
+    toast('No se ha podido guardar la foto en este dispositivo.', { tipo: 'error' });
+  }
+  const n = app.ui.adjRapido?.length || 0;
+  if (cuenta) cuenta.textContent = n ? `${n} foto${n > 1 ? 's' : ''}` : 'Ticket';
+  cuenta?.closest('.btn-foto')?.classList.toggle('con', n > 0);
+}
 
 /* ───────────── Exportación / importación ───────────── */
 
@@ -409,6 +436,10 @@ function exportarCSV(tabla) {
 
 function exportarFiscal() {
   const anio = app.ui.fiscal.anio;
+  descargar(`alquileres-fiscal-${anio}.csv`, csvFiscal(anio), 'text/csv');
+}
+
+function csvFiscal(anio) {
   const datos = calculoFiscal(anio);
   const filas = [];
   for (const d of datos) {
@@ -424,15 +455,129 @@ function exportarFiscal() {
     ['otros', g('otros')], ['exceso_anos_anteriores_aplicado', g('arrastre')], ['amortizacion_inmueble', g('amort_inm')], ['amortizacion_muebles', g('amort_mue')], ['total_gastos', (x) => x.f.gastosDeducibles],
     ['exceso_no_deducido', (x) => x.f.exceso], ['pendiente_anos_futuros', (x) => x.f.pendienteFuturo], ['dias_arrendado_pct', (x) => Math.round(x.f.pct * 1000) / 10], ['rendimiento_neto', (x) => x.f.rendimientoNeto], ['reduccion', (x) => x.f.reduccion], ['rendimiento_reducido', (x) => x.f.rendimientoReducido],
   ];
-  descargar(`alquileres-fiscal-${anio}.csv`, aCSV(filas, cols), 'text/csv');
+  return aCSV(filas, cols);
+}
+
+/* ───────────── Justificantes para el gestor y copia con documentos ───────────── */
+
+const limpio = (t) => String(t || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 70) || 'documento';
+
+/** ZIP con los justificantes de un ejercicio, ordenados por carpetas, con un índice y el resumen fiscal. */
+async function zipGestor(compartir) {
+  const s = app.s;
+  const anio = app.ui.fiscal.anio;
+  const ini = `${anio}-01-01`;
+  const fin = `${anio}-12-31`;
+  const raiz = `Justificantes ${anio}`;
+  const pn = (id) => limpio(piso(id)?.nombre || 'Sin piso');
+  const entradas = [];
+  const indice = [];
+  const usados = new Set();
+  let faltan = 0;
+  toast('Preparando los justificantes…', { ms: 2500 });
+  const anadir = async (d, carpeta, base, info) => {
+    const b = await leerBlob(d.id);
+    if (!b) { faltan++; return; }
+    let nombre = `${carpeta}/${limpio(base)}`;
+    for (let n = 2; usados.has(nombre); n++) nombre = `${carpeta}/${limpio(base)} (${n})`;
+    usados.add(nombre);
+    nombre += `.${extension(d.mime, d.nombre)}`;
+    entradas.push({ nombre: `${raiz}/${nombre}`, datos: b });
+    indice.push({ ...info, archivo: nombre });
+  };
+  const de = (tipo, id) => s.docs.filter((d) => d.tipo === tipo && d.refId === id);
+  for (const g of s.gastos.filter((x) => x.fecha >= ini && x.fecha <= fin).sort((a, b) => (a.fecha < b.fecha ? -1 : 1))) {
+    for (const d of de('gasto', g.id)) {
+      await anadir(d, `Gastos/${pn(g.pisoId)}`, `${g.fecha} ${g.concepto || CAT[g.categoria]?.nombre || 'Gasto'} ${fmtEUR(g.importe)}`, { tipo: 'Gasto', piso: piso(g.pisoId)?.nombre, fecha: g.fecha, concepto: g.concepto || CAT[g.categoria]?.nombre, categoria: CAT[g.categoria]?.nombre, importe: num(g.importe) });
+    }
+  }
+  for (const k of s.contratos.filter((x) => x.inicio <= fin && (!x.fin || x.fin >= ini))) {
+    for (const d of de('contrato', k.id)) await anadir(d, `Contratos/${pn(k.pisoId)}`, `${k.inquilino} desde ${k.inicio}`, { tipo: 'Contrato', piso: piso(k.pisoId)?.nombre, fecha: k.inicio, concepto: `Contrato de ${k.inquilino}`, importe: num(k.renta) });
+  }
+  for (const r of s.reservas.filter((x) => x.entrada <= fin && x.salida >= ini)) {
+    for (const d of de('reserva', r.id)) await anadir(d, `Reservas/${pn(r.pisoId)}`, `${r.entrada} ${r.huesped}`, { tipo: 'Reserva', piso: piso(r.pisoId)?.nombre, fecha: r.entrada, concepto: `${r.huesped} · ${r.canal || ''}`, importe: num(r.importe) });
+  }
+  for (const h of s.hipotecas) for (const d of de('hipoteca', h.id)) await anadir(d, `Hipotecas/${pn(h.pisoId)}`, `${h.entidad || 'Hipoteca'} ${d.nombre.replace(/\.\w+$/, '')}`, { tipo: 'Hipoteca', piso: piso(h.pisoId)?.nombre, concepto: h.entidad });
+  for (const p of s.pisos) for (const d of de('piso', p.id)) await anadir(d, `Pisos/${limpio(p.nombre)}`, d.nombre.replace(/\.\w+$/, ''), { tipo: 'Documento del piso', piso: p.nombre, concepto: d.nombre });
+
+  const sinJust = s.gastos.filter((g) => g.fecha >= ini && g.fecha <= fin && CAT[g.categoria]?.trato !== 'no' && g.deducible !== false && !g.recurrenteId && !s.docs.some((d) => d.tipo === 'gasto' && d.refId === g.id));
+  entradas.push({ nombre: `${raiz}/indice.csv`, datos: aCSV(indice, [['tipo', (x) => x.tipo], ['piso', (x) => x.piso], ['fecha', (x) => x.fecha || ''], ['concepto', (x) => x.concepto], ['categoria', (x) => x.categoria || ''], ['importe', (x) => x.importe ?? ''], ['archivo', (x) => x.archivo]]) });
+  entradas.push({ nombre: `${raiz}/resumen-fiscal-${anio}.csv`, datos: csvFiscal(anio) });
+  if (sinJust.length) entradas.push({ nombre: `${raiz}/gastos-sin-justificante.csv`, datos: aCSV(sinJust, [['fecha', (g) => g.fecha], ['piso', (g) => piso(g.pisoId)?.nombre], ['concepto', (g) => g.concepto || CAT[g.categoria]?.nombre], ['importe', (g) => num(g.importe)]]) });
+  entradas.push({ nombre: `${raiz}/LEEME.txt`, datos: [
+    `Justificantes del ejercicio ${anio}`,
+    `Generado el ${today()} con la app Alquileres.`,
+    '',
+    `Documentos: ${indice.length}`,
+    `Gastos deducibles sin justificante: ${sinJust.length}${sinJust.length ? ' (ver gastos-sin-justificante.csv)' : ''}`,
+    faltan ? `Documentos no disponibles en este dispositivo: ${faltan}` : '',
+    '',
+    'Carpetas: Gastos, Contratos, Reservas, Hipotecas y Pisos, cada una por inmueble.',
+    'indice.csv relaciona cada archivo con su apunte; resumen-fiscal contiene el cálculo por inmueble.',
+    'Conserva estos justificantes al menos 4 años (plazo de prescripción ante Hacienda).',
+  ].join('\r\n') });
+  const zip = await crearZip(entradas);
+  const nombre = `justificantes-${anio}.zip`;
+  const file = new File([zip], nombre, { type: 'application/zip' });
+  if (compartir && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: `Justificantes ${anio}`, text: `Justificantes del alquiler ${anio}` }); } catch {}
+    return;
+  }
+  descargar(nombre, zip);
+  toast(`ZIP con ${indice.length} documentos descargado${sinJust.length ? ` · faltan ${sinJust.length} justificantes` : ''}`, { tipo: sinJust.length ? 'warn' : 'ok', ms: 6000 });
+}
+
+/** Copia completa: los datos y todos los documentos en un único ZIP. */
+async function exportarZipCompleto() {
+  const s = app.s;
+  toast('Preparando la copia con documentos…', { ms: 2500 });
+  const entradas = [{ nombre: 'alquileres.json', datos: JSON.stringify({ ...s, ajustes: { ...s.ajustes, ultimoBackup: today() } }) }];
+  for (const d of s.docs) {
+    const b = await leerBlob(d.id);
+    if (b) entradas.push({ nombre: `docs/${d.id}`, datos: b });
+    const t = d.miniatura ? await leerBlob(`${d.id}:t`) : null;
+    if (t) entradas.push({ nombre: `docs/${d.id}.t`, datos: t });
+  }
+  const zip = await crearZip(entradas);
+  const nombre = `alquileres-copia-con-documentos-${today()}.zip`;
+  const file = new File([zip], nombre, { type: 'application/zip' });
+  s.ajustes.ultimoBackup = today();
+  if (matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'Copia de Alquileres' }); commit('Copia guardada'); } catch {}
+    return;
+  }
+  descargar(nombre, zip);
+  commit(`Copia con ${s.docs.length} documentos descargada`);
+}
+
+async function importarZip(file) {
+  const entradas = await leerZip(file);
+  const json = entradas.find((e) => e.nombre === 'alquileres.json');
+  if (!json) throw new Error('El ZIP no es una copia de la app (falta alquileres.json).');
+  const datos = migrar(JSON.parse(new TextDecoder().decode(json.datos)));
+  if (app.s && !(await confirmar('Restaurar copia con documentos', `Se sustituirán los datos actuales por los de «${file.name}» (${datos.pisos.length} pisos, ${datos.gastos.length} gastos, ${datos.docs.length} documentos).`, { ok: 'Restaurar' }))) return;
+  for (const e of entradas) {
+    if (!e.nombre.startsWith('docs/')) continue;
+    const clave = e.nombre.slice(5).replace(/\.t$/, ':t');
+    const ficha = datos.docs.find((d) => d.id === clave.replace(/:t$/, ''));
+    await ponerBlob(clave, new Blob([e.datos], { type: clave.endsWith(':t') ? 'image/jpeg' : ficha?.mime || 'application/octet-stream' }));
+  }
+  app.s = datos;
+  sincronizar(app.s, today());
+  commit(`Copia restaurada con ${datos.docs.length} documentos`);
+  location.hash = '#/';
 }
 
 async function importar(input) {
   const file = input.files?.[0];
   input.value = '';
   if (!file) return;
-  const texto = await file.text();
   const tipo = input.dataset.import;
+  if (tipo === 'json' && /\.zip$/i.test(file.name)) {
+    try { await importarZip(file); } catch (err) { console.error(err); toast(`No se ha podido restaurar: ${err.message}`, { tipo: 'error', ms: 7000 }); }
+    return;
+  }
+  const texto = await file.text();
   try {
     if (tipo === 'json') {
       const datos = migrar(JSON.parse(texto));

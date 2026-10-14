@@ -1,6 +1,7 @@
 import { html, raw, fmtEUR, ICON, sel } from '../ui.js';
 import { app, today, pisosDe, ctxPiso, regimen } from '../state.js';
-import { fiscalPiso, GRUPOS_FISCALES, num, r2 } from '../calc.js';
+import { fiscalPiso, GRUPOS_FISCALES, num, r2, CAT } from '../calc.js';
+import { CLIP } from '../adjuntos.js';
 
 export function calculoFiscal(anio) {
   const y = Number(anio);
@@ -36,7 +37,45 @@ export function vistaFiscal() {
       </div>
     </header>
     <div class="banner banner-soft">${raw(ICON.doc)}<span>Estimación orientativa calculada con tus datos. Revísala con tu asesor antes de presentar la declaración.</span></div>
+    ${bloqueJustificantes(anio)}
     ${datos.map(bloqueTitular)}`;
+}
+
+/** Resumen de justificantes del ejercicio y envío al gestor. */
+function bloqueJustificantes(anio) {
+  const s = app.s;
+  const ini = `${anio}-01-01`;
+  const fin = `${anio}-12-31`;
+  const tiene = (tipo, id) => s.docs.some((d) => d.tipo === tipo && d.refId === id);
+  const gastos = s.gastos.filter((g) => g.fecha >= ini && g.fecha <= fin && CAT[g.categoria]?.trato !== 'no' && g.deducible !== false);
+  const conJust = gastos.filter((g) => tiene('gasto', g.id)).length;
+  const sinJust = gastos.filter((g) => !g.recurrenteId && !tiene('gasto', g.id));
+  const contratos = s.contratos.filter((k) => k.inicio <= fin && (!k.fin || k.fin >= ini));
+  const contratosDoc = contratos.filter((k) => tiene('contrato', k.id)).length;
+  const hipotecasDoc = s.hipotecas.filter((h) => tiene('hipoteca', h.id)).length;
+  const total = s.docs.filter((d) => (d.tipo === 'gasto' && gastos.some((g) => g.id === d.refId)) || d.tipo === 'piso' || d.tipo === 'hipoteca' || (d.tipo === 'contrato' && contratos.some((k) => k.id === d.refId)) || d.tipo === 'reserva').length;
+  const pct = gastos.length ? Math.round((conJust / gastos.length) * 100) : 100;
+  return html`
+    <section class="card justif">
+      <div class="card-head">
+        <h2>${raw(CLIP)} Justificantes ${anio} para el gestor</h2>
+        <div class="head-actions">
+          <button class="btn" data-action="compartir-gestor">Compartir</button>
+          <button class="btn btn-primary" data-action="zip-gestor">${raw(ICON.download)}<span>Descargar ZIP</span></button>
+        </div>
+      </div>
+      <div class="justif-grid">
+        <div class="justif-dato"><span class="kpi-label">Gastos con ticket o factura</span><strong>${conJust} de ${gastos.length}</strong>
+          <div class="meter"><span style="width:${pct}%"></span></div></div>
+        <div class="justif-dato"><span class="kpi-label">Contratos con documento</span><strong>${contratosDoc} de ${contratos.length}</strong></div>
+        <div class="justif-dato"><span class="kpi-label">Hipotecas con escritura</span><strong>${hipotecasDoc} de ${s.hipotecas.length}</strong></div>
+        <div class="justif-dato"><span class="kpi-label">Documentos en el ZIP</span><strong>${total}</strong></div>
+      </div>
+      ${sinJust.length
+        ? html`<p class="foot-note t-warn">${sinJust.length} ${sinJust.length === 1 ? 'gasto deducible no tiene' : 'gastos deducibles no tienen'} justificante. <a class="link" href="#/gastos" data-action="ver-sin-just" data-anio="${anio}">Ver y hacerles foto</a></p>`
+        : html`<p class="foot-note">Todos los gastos deducibles de ${anio} tienen su justificante.</p>`}
+      <p class="foot-note">El ZIP incluye carpetas por inmueble (gastos, contratos, reservas, hipotecas y documentos del piso), un índice, el resumen fiscal y la lista de lo que falta. Conserva los justificantes al menos 4 años.</p>
+    </section>`;
 }
 
 function sumaF(fs) {

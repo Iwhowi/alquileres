@@ -11,6 +11,7 @@ import {
   addMonthsISO, rentaDelMes, esperadoReserva,
 } from './calc.js';
 import { opcionesCategoria, opcionesPiso } from './views/gastos.js';
+import { zonaDocs, montarDocs, apartarDocs } from './adjuntos.js';
 
 function error(form, msg) {
   let el = form.querySelector('.form-error');
@@ -160,6 +161,7 @@ export function formContrato(id, { pisoId, unidadId, base } = {}) {
         ${campo('Fin', inp('fin', v.fin, { type: 'date' }), { ayuda: 'Vacío si no tiene fecha de fin.' })}
         <div class="span2">${chk('prorratear', v.prorratear !== false, 'Prorratear la renta del primer y último mes por días')}</div>
         ${campo('Notas', raw(`<textarea name="notas" rows="2">${String(html`${v.notas || ''}`)}</textarea>`), { clase: 'span2' })}
+        ${zonaDocs('Contrato firmado y anexos', 'Fotografía cada página o adjunta el PDF. Útil ante una inspección de Hacienda o un impago.')}
       </div>`,
     extra: k ? borrar('borrar') : '',
     submit: (d, f) => {
@@ -184,9 +186,11 @@ export function formContrato(id, { pisoId, unidadId, base } = {}) {
         if (anterior) anterior.avisosHechos = [0, ...(app.s.ajustes.tramos || [90, 60, 30])];
       }
       reajustarUnidad(app.s, obj, today());
+      docsK.confirmar(obj.id, obj.pisoId);
       commit(k ? 'Contrato actualizado' : 'Contrato creado · recibos generados');
     },
   });
+  const docsK = montarDocs(form, { tipo: 'contrato', refId: k?.id });
   onDlg(form, 'borrar', async () => {
     const cobrados = app.s.cobros.filter((c) => c.contratoId === k.id && num(c.cobrado) > 0).length;
     if (!(await confirmar('Eliminar contrato', `Se eliminará el contrato de ${k.inquilino} y sus recibos sin cobrar.${cobrados ? ` Los ${cobrados} recibos ya cobrados se conservan como historial.` : ''} Si el inquilino simplemente se ha ido, usa «Finalizar».`))) return;
@@ -194,6 +198,7 @@ export function formContrato(id, { pisoId, unidadId, base } = {}) {
     app.s.cobros = app.s.cobros.filter((c) => c.contratoId !== k.id || num(c.cobrado) > 0);
     for (const c of app.s.cobros) if (c.contratoId === k.id) { c.pagador = k.inquilino; c.telefono = k.telefono; c.contratoId = null; c.auto = false; }
     app.s.contratos = app.s.contratos.filter((x) => x !== k);
+    apartarDocs('contrato', k.id);
     sincronizar(app.s, today());
     commit('Contrato eliminado');
   });
@@ -315,6 +320,7 @@ export function formPiso(id) {
         ${campo('Exceso pendiente de años anteriores', money('excesoPrevio', v.excesoPrevio), { ayuda: 'Intereses + reparación no deducidos antes de usar la app (casilla de la última renta).' })}
         ${campo('Año de ese exceso', inp('excesoPrevioAnio', v.excesoPrevioAnio, { type: 'number', min: 2015, max: 2100, ph: 'Ej.: 2024' }))}
         ${campo('Notas', raw(`<textarea name="notas" rows="2">${String(html`${v.notas || ''}`)}</textarea>`), { clase: 'span2' })}
+        ${zonaDocs('Documentos del piso', 'Escritura, nota simple, recibo del IBI, póliza del seguro, certificado energético…')}
       </div>`,
     extra: p ? borrar('borrar') : '',
     submit: (d, f) => {
@@ -329,15 +335,18 @@ export function formPiso(id) {
         app.s.pisos.push(obj);
         app.s.unidades.push(...unidadesPara(obj, Math.min(20, Math.max(1, num(d.habitaciones) | 0))));
       }
+      docsP.confirmar(obj.id, obj.id);
       commit(p ? 'Piso actualizado' : 'Piso añadido');
       if (!p) location.hash = `#/piso/${obj.id}`;
     },
   });
+  const docsP = montarDocs(form, { tipo: 'piso', refId: p?.id });
   onDlg(form, 'borrar', async () => {
     if (!(await confirmar('Eliminar piso', `Se eliminará «${p.nombre}» con todos sus contratos, cobros, reservas, gastos e hipotecas. No se puede deshacer.`))) return;
     cerrarDialogo();
     const s = app.s;
     for (const k of ['unidades', 'contratos', 'cobros', 'reservas', 'gastos', 'recurrentes', 'hipotecas']) s[k] = s[k].filter((x) => x.pisoId !== p.id);
+    for (const d of s.docs.filter((x) => x.pisoId === p.id)) apartarDocs(d.tipo, d.refId);
     s.pisos = s.pisos.filter((x) => x !== p);
     location.hash = '#/pisos';
     commit('Piso eliminado');
@@ -416,6 +425,7 @@ export function formGasto(id, pisoId) {
           ${chk('extraordinario', v.extraordinario, 'Gasto extraordinario (no recurrente)')}
           ${chk('deducible', v.deducible !== false, 'Tengo factura y es deducible')}
         </div>
+        ${zonaDocs('Ticket o factura')}
       </div>`,
     extra: g ? borrar('borrar') : '',
     submit: (d, f) => {
@@ -425,11 +435,13 @@ export function formGasto(id, pisoId) {
       Object.assign(obj, { fecha: d.fecha, importe, pisoId: d.pisoId, categoria: d.categoria, concepto: d.concepto, proveedor: d.proveedor, extraordinario: d.extraordinario, deducible: d.deducible });
       if (g?.recurrenteId) obj.editado = true;
       if (!g) app.s.gastos.push(obj);
+      docs.confirmar(obj.id, obj.pisoId);
       app.ui.ultimoPiso = d.pisoId;
       app.ui.ultimaCat = d.categoria;
       commit(g ? 'Gasto actualizado' : 'Gasto añadido');
     },
   });
+  const docs = montarDocs(form, { tipo: 'gasto', refId: g?.id });
   onDlg(form, 'borrar', async () => {
     if (!(await confirmar('Eliminar gasto', `${g.concepto || CAT[g.categoria]?.nombre} · ${fmtEUR(g.importe)}`))) return;
     cerrarDialogo();
@@ -441,18 +453,22 @@ export function eliminarGasto(g) {
   const rec = g.recurrenteId ? app.s.recurrentes.find((r) => r.id === g.recurrenteId) : null;
   if (rec) rec.omitidos = [...new Set([...(rec.omitidos || []), g.periodo])];
   app.s.gastos = app.s.gastos.filter((x) => x !== g);
+  const recuperarDocs = apartarDocs('gasto', g.id);
   commit('Gasto eliminado', {
-    accion: { texto: 'Deshacer', fn: () => { app.s.gastos.push(g); if (rec) rec.omitidos = rec.omitidos.filter((p) => p !== g.periodo); commit(); } },
+    accion: { texto: 'Deshacer', fn: () => { app.s.gastos.push(g); recuperarDocs(); if (rec) rec.omitidos = rec.omitidos.filter((p) => p !== g.periodo); commit(); } },
   });
 }
 
-export function gastoRapido(d) {
+export function gastoRapido(d, adjuntos = []) {
   const importe = r2(num(d.importe));
-  if (!(importe > 0)) return toast('Indica el importe.', { tipo: 'error' });
-  app.s.gastos.push({ id: uid(), fecha: d.fecha || today(), pisoId: d.pisoId, categoria: d.categoria, concepto: d.concepto, proveedor: '', importe, extraordinario: !!d.extraordinario, deducible: true });
+  if (!(importe > 0)) { toast('Indica el importe.', { tipo: 'error' }); return false; }
+  const id = uid();
+  app.s.gastos.push({ id, fecha: d.fecha || today(), pisoId: d.pisoId, categoria: d.categoria, concepto: d.concepto, proveedor: '', importe, extraordinario: !!d.extraordinario, deducible: true });
+  for (const a of adjuntos) app.s.docs.push({ ...a, tipo: 'gasto', refId: id, pisoId: d.pisoId });
   app.ui.ultimoPiso = d.pisoId;
   app.ui.ultimaCat = d.categoria;
-  commit(`Gasto de ${fmtEUR(importe)} añadido a ${piso(d.pisoId)?.nombre}`);
+  commit(`Gasto de ${fmtEUR(importe)} añadido a ${piso(d.pisoId)?.nombre}${adjuntos.length ? ` con ${adjuntos.length === 1 ? 'su justificante' : `${adjuntos.length} justificantes`}` : ''}`);
+  return true;
 }
 
 export function formRecurrente(id, pisoId) {
@@ -515,7 +531,8 @@ export function formHipoteca(id, pisoId) {
         ${campo('Cuota mensual (opcional)', money('cuota', v.cuota), { ayuda: 'Vacío = se calcula (sistema francés).' })}
         ${campo('Primera cuota de la hipoteca', mesSel('mesInicio', v.mesInicio, { vacio: true }), { clase: 'span2', ayuda: 'Opcional. Si la indicas, se reconstruyen las cuotas anteriores al mes de referencia (para el histórico y la renta de años pasados). Si no, solo se cuentan desde el mes de referencia.' })}
       </div>
-      <div class="calc-preview" data-preview></div>`,
+      <div class="calc-preview" data-preview></div>
+      <div class="form-grid mt">${zonaDocs('Escritura y recibos del banco', 'Escritura del préstamo y certificado anual de intereses (lo pide el gestor para deducirlos).')}</div>`,
     extra: h ? borrar('borrar') : '',
     submit: (d, f) => {
       if (d.mesFin < d.mesRef) return error(f, 'La última cuota es anterior al mes de referencia.');
@@ -528,6 +545,7 @@ export function formHipoteca(id, pisoId) {
       const int1 = num(obj.capitalPendiente) * (obj.tipo / 1200);
       if (cuota <= int1) return error(f, `Con esa cuota (${fmtEUR(cuota)}) no se cubren ni los intereses (${fmtEUR(int1)}). Revisa los datos.`);
       if (!h) app.s.hipotecas.push(obj);
+      docsH.confirmar(obj.id, obj.pisoId);
       commit('Hipoteca guardada');
     },
   });
@@ -544,10 +562,12 @@ export function formHipoteca(id, pisoId) {
   };
   form.addEventListener('input', upd);
   upd();
+  const docsH = montarDocs(form, { tipo: 'hipoteca', refId: h?.id });
   onDlg(form, 'borrar', async () => {
     if (!(await confirmar('Eliminar hipoteca', 'Dejará de descontarse del cash-flow y de deducirse sus intereses.'))) return;
     cerrarDialogo();
     app.s.hipotecas = app.s.hipotecas.filter((x) => x !== h);
+    apartarDocs('hipoteca', h.id);
     commit('Hipoteca eliminada');
   });
 }
@@ -579,7 +599,8 @@ export function formReserva(id, { pisoId, fecha } = {}) {
         ${campo('Notas', raw(`<textarea name="notas" rows="2">${String(html`${v.notas || ''}`)}</textarea>`), { clase: 'span2' })}
         ${r ? html`<div class="span2">${chk('cancelada', !!v.cancelada, 'Reserva cancelada (libera el calendario; lo cobrado y no devuelto cuenta como ingreso)')}</div>` : ''}
       </div>
-      <div class="calc-preview" data-preview></div>`,
+      <div class="calc-preview" data-preview></div>
+      <div class="form-grid mt">${zonaDocs('Factura o justificante', 'Factura de la plataforma o justificante de pago del huésped.')}</div>`,
     extra: html`${r ? borrar('borrar') : ''}<button type="button" class="btn btn-ghost" data-dlg-action="pagada">Marcar cobrada</button>`,
     submit: (d, f) => {
       if (!(d.salida > d.entrada)) return error(f, 'La salida debe ser posterior a la entrada.');
@@ -600,9 +621,11 @@ export function formReserva(id, { pisoId, fecha } = {}) {
       });
       if (!r) app.s.reservas.push(obj);
       app.ui.cal.mes = ymOf(obj.entrada) > app.ui.cal.mes || ymOf(obj.salida) < app.ui.cal.mes ? ymOf(obj.entrada) : app.ui.cal.mes;
+      docsR.confirmar(obj.id, obj.pisoId);
       commit(r ? 'Reserva actualizada' : 'Reserva creada');
     },
   });
+  const docsR = montarDocs(form, { tipo: 'reserva', refId: r?.id });
   const prev = form.querySelector('[data-preview]');
   const upd = () => {
     const el = form.elements;
@@ -624,7 +647,8 @@ export function formReserva(id, { pisoId, fecha } = {}) {
     if (!(await confirmar('Eliminar reserva', `${r.huesped} · ${fmtFecha(r.entrada, { corto: true })} → ${fmtFecha(r.salida, { corto: true })}`))) return;
     cerrarDialogo();
     app.s.reservas = app.s.reservas.filter((x) => x !== r);
-    commit('Reserva eliminada', { accion: { texto: 'Deshacer', fn: () => { app.s.reservas.push(r); commit(); } } });
+    const recuperar = apartarDocs('reserva', r.id);
+    commit('Reserva eliminada', { accion: { texto: 'Deshacer', fn: () => { app.s.reservas.push(r); recuperar(); commit(); } } });
   });
 }
 

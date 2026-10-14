@@ -3,6 +3,7 @@ import {
   app, today, piso, titular, pisosDe, unidadesDe, contratoVigente, resultado, modalidad, regimen, ctxPiso, avisos,
 } from '../state.js';
 import { finEfectivo } from '../store.js';
+import { CLIP, tieneDocs } from '../adjuntos.js';
 import {
   monthStart, monthEnd, ymOf, diffDays, tramoContrato, hipotecaMes, cuadroAmortizacion, hipotecaBase, CAT, num, addMonths, monthsDiff, rentaDelMes, factorArrendado,
 } from '../calc.js';
@@ -95,7 +96,8 @@ export function vistaPiso(id) {
     ${bloqueHipotecas(p)}
     ${bloqueRecurrentes(p)}
     ${bloqueUltimosGastos(p)}
-    ${bloqueFicha(p, t)}`;
+    ${bloqueFicha(p, t)}
+    ${bloqueDocumentos(p)}`;
 }
 
 function k(label, v, sub, main) {
@@ -147,7 +149,7 @@ function contratoCard(k, hoy) {
   return html`
     <div class="contract">
       <div class="contract-main">
-        <div><strong>${k.inquilino}</strong>${k.telefono ? html` <a class="muted small" href="tel:${k.telefono}">${k.telefono}</a>` : ''}</div>
+        <div><strong>${k.inquilino}</strong>${tieneDocs('contrato', k.id) ? html` <span class="chip chip-ok chip-clip" title="Contrato adjunto">${raw(CLIP)}</span>` : html` <span class="chip chip-soft" title="Adjunta el contrato firmado desde editar">Sin contrato adjunto</span>`}${k.telefono ? html` <a class="muted small" href="tel:${k.telefono}">${k.telefono}</a>` : ''}</div>
         <div class="muted small">${fmtEUR(renta)}/mes${renta !== num(k.renta) ? ` (inicial ${fmtEUR(k.renta)})` : ''}${proxima ? html` · <span class="t-info">sube a ${fmtEUR(proxima.renta)} en ${fmtMes(proxima.desde, { corto: true })}</span>` : ''} · paga el día ${k.diaPago || 1} · fianza ${fmtEUR(k.fianza || 0)}</div>
         <div class="small">
           ${fmtFecha(k.inicio, { corto: true })} – ${k.fin ? fmtFecha(k.fin, { corto: true }) : 'indefinido'}
@@ -269,6 +271,33 @@ function bloqueUltimosGastos(p) {
             </li>`)}</ul>`
         : html`<p class="muted">Sin gastos registrados.</p>`}
     </section>`;
+}
+
+/** Documentos del piso: escrituras, contratos, hipoteca y justificantes de gastos. */
+function bloqueDocumentos(p) {
+  const docs = app.s.docs.filter((d) => d.pisoId === p.id);
+  const grupo = (tipo, titulo) => {
+    const ds = docs.filter((d) => d.tipo === tipo);
+    if (!ds.length) return '';
+    return html`<h3 class="sub-h">${titulo} <span class="muted">· ${ds.length}</span></h3>
+      <div class="docs-grid">${ds.slice(0, 24).map((d) => html`
+        <figure class="doc"><button type="button" class="doc-ver" data-action="ver-doc" data-id="${d.id}" aria-label="Ver ${d.nombre}">
+          ${d.miniatura ? html`<img alt="" data-thumb="${d.id}">` : html`<span class="doc-pdf">${(d.nombre.split('.').pop() || 'DOC').toUpperCase()}</span>`}</button>
+          <figcaption><span>${etiquetaDoc(d)}</span></figcaption></figure>`)}</div>`;
+  };
+  return html`
+    <section class="card">
+      <div class="card-head"><h2>${raw(CLIP)} Documentos</h2><button class="btn btn-sm" data-action="editar-piso" data-id="${p.id}">${raw(ICON.plus)}<span>Escritura, IBI, seguro…</span></button></div>
+      ${docs.length
+        ? html`${grupo('piso', 'Del piso')}${grupo('contrato', 'Contratos')}${grupo('hipoteca', 'Hipoteca')}${grupo('gasto', 'Tickets y facturas')}${grupo('reserva', 'Reservas')}`
+        : html`<p class="muted">Aún no hay documentos. Adjunta la escritura y los recibos desde «Datos», el contrato desde cada contrato y los tickets desde cada gasto.</p>`}
+    </section>`;
+}
+
+function etiquetaDoc(d) {
+  if (d.tipo === 'gasto') { const g = app.s.gastos.find((x) => x.id === d.refId); return g ? `${fmtFecha(g.fecha, { corto: true })} · ${fmtEUR(g.importe)}` : d.nombre; }
+  if (d.tipo === 'contrato') return app.s.contratos.find((x) => x.id === d.refId)?.inquilino || d.nombre;
+  return d.nombre;
 }
 
 function bloqueFicha(p, t) {

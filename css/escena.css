@@ -501,3 +501,47 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
   .cal-bar { color: #0d1218; }
   .badge, .tab .badge { color: #1a0c0e; }
 }
+
+/* ───────────── Documentos adjuntos ───────────── */
+.mt { margin-top: 16px; }
+.docs-zona { border: 1.5px dashed var(--line-2); border-radius: 14px; padding: 12px; background: color-mix(in srgb, var(--surface-2) 70%, transparent); display: flex; flex-direction: column; gap: 10px; }
+.docs-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.docs-head .field-label { display: inline-flex; align-items: center; gap: 6px; }
+.docs-zona.vacia .docs-grid { display: none; }
+.docs-grid { display: grid; grid-template-columns: repeat(auto-fill, 96px); gap: 12px; }
+.doc { position: relative; margin: 0; display: flex; flex-direction: column; gap: 4px; animation: aparecer 0.35s var(--spring); }
+@keyframes aparecer { from { opacity: 0; transform: scale(0.9); } }
+.doc-ver { display: block; aspect-ratio: 3 / 4; width: 100%; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); padding: 0; cursor: zoom-in; }
+.doc-ver img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.doc-pdf { display: grid; place-items: center; width: 100%; height: 100%; font: 700 14px ui-monospace, Menlo, monospace; color: var(--neg); background: var(--neg-soft); }
+.doc figcaption { display: flex; flex-direction: column; font-size: 11.5px; line-height: 1.25; min-width: 0; }
+.doc figcaption span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc figcaption small { color: var(--muted); }
+.doc-x { position: absolute; top: -7px; right: -7px; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--surface); display: grid; place-items: center; cursor: pointer; color: var(--ink-2); box-shadow: var(--shadow); }
+.doc-x svg { width: 14px; height: 14px; }
+.doc-cargando .doc-ver, .doc-cargando { align-items: center; justify-content: center; }
+.doc-cargando { aspect-ratio: 3 / 4; border-radius: 10px; border: 1px dashed var(--line-2); display: grid; place-items: center; }
+.spinner { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--line-2); border-top-color: var(--accent); animation: girar 0.8s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+.chip-clip { padding: 0 6px; }
+.chip-clip svg { width: 13px; height: 13px; }
+.btn-foto { gap: 6px; }
+.btn-foto.con { border-color: var(--pos); color: var(--pos); background: var(--ok-soft); }
+/* Visor de documentos */
+dialog.visor { width: min(980px, calc(100vw - 24px)); height: min(92vh, 1100px); max-height: none; padding: 0; display: none; flex-direction: column; overflow: hidden; }
+dialog.visor[open] { display: flex; }
+.visor-barra { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.visor-tit { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.visor-tit strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visor-tit small { color: var(--muted); font-size: 12px; }
+.visor-cuerpo { flex: 1; min-height: 0; display: grid; place-items: center; background: var(--surface-2); overflow: auto; }
+.visor-cuerpo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.visor-cuerpo iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+@media (max-width: 640px) { dialog.visor { width: 100vw; height: 100vh; max-width: 100vw; border-radius: 0; margin: 0; } }
+/* Justificantes en Fiscal */
+.justif .card-head h2 { display: inline-flex; align-items: center; gap: 8px; }
+.justif-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.justif-dato { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+.justif-dato strong { font-size: 19px; font-variant-numeric: tabular-nums; }
+.justif-dato .meter { margin-top: 4px; }
+@media (max-width: 899px) { .justif-grid { grid-template-columns: 1fr 1fr; } }

@@ -144,6 +144,9 @@ export function abrirDialogo({ titulo, cuerpo, submit, textoOk = 'Guardar', peli
   return form;
 }
 
+/** Cambia lo que se hace al cerrar el diálogo abierto (también con Esc o Cancelar). */
+export function alCerrar(fn) { onClose = fn; }
+
 export function cerrarDialogo() {
   if (dlg?.open) dlg.close();
   else { const cb = onClose; onClose = null; cb?.(); }

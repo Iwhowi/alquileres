@@ -1,6 +1,11 @@
 import { html, raw, fmtEUR, fmtFecha, fmtMes, ICON, sel, mesNombre } from '../ui.js';
 import { app, today, piso } from '../state.js';
 import { CATEGORIAS, CAT, ymOf, num } from '../calc.js';
+import { tieneDocs, CLIP } from '../adjuntos.js';
+
+const deducible = (g) => CAT[g.categoria]?.trato !== 'no' && g.deducible !== false;
+/** Gasto deducible sin ticket ni factura adjunta (los fijos se justifican con el recibo del banco). */
+export const sinJustificante = (g) => deducible(g) && !g.recurrenteId && !tieneDocs('gasto', g.id);
 
 export function opcionesCategoria() {
   return [
@@ -21,7 +26,8 @@ export function vistaGastos() {
   if (f.piso) lista = lista.filter((g) => g.pisoId === f.piso);
   if (f.anio) lista = lista.filter((g) => g.fecha.startsWith(f.anio));
   if (f.mes) lista = lista.filter((g) => g.fecha.slice(5, 7) === f.mes);
-  if (f.cat) lista = lista.filter((g) => g.categoria === f.cat || (f.cat === 'extra' && g.extraordinario));
+  if (f.cat === 'sinjust') lista = lista.filter(sinJustificante);
+  else if (f.cat) lista = lista.filter((g) => g.categoria === f.cat || (f.cat === 'extra' && g.extraordinario));
   if (f.q) {
     const q = f.q.toLowerCase();
     lista = lista.filter((g) => `${g.concepto} ${g.proveedor} ${piso(g.pisoId)?.nombre}`.toLowerCase().includes(q));
@@ -29,6 +35,7 @@ export function vistaGastos() {
   lista = [...lista].sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
   const total = lista.reduce((a, g) => a + num(g.importe), 0);
   const extra = lista.filter((g) => g.extraordinario).reduce((a, g) => a + num(g.importe), 0);
+  const nSin = app.s.gastos.filter((g) => (!f.anio || g.fecha.startsWith(f.anio)) && (!f.piso || g.pisoId === f.piso) && sinJustificante(g)).length;
   const noDed = lista.filter((g) => CAT[g.categoria]?.trato === 'no' || g.deducible === false).reduce((a, g) => a + num(g.importe), 0);
   const porCat = new Map();
   for (const g of lista) porCat.set(g.categoria, (porCat.get(g.categoria) || 0) + num(g.importe));
@@ -56,6 +63,7 @@ export function vistaGastos() {
         <label class="field grow2"><span class="field-label">Concepto</span><input name="concepto" placeholder="Ej.: fontanero, bombillas…"></label>
         <label class="field"><span class="field-label">Importe</span><input name="importe" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" required></label>
         <label class="check check-inline"><input type="checkbox" name="extraordinario"><span>Extraordinario</span></label>
+        <label class="btn btn-foto" title="Foto del ticket o la factura">${raw('<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>')}<span data-rapido-cuenta>${(app.ui.adjRapido || []).length ? `${app.ui.adjRapido.length} foto${app.ui.adjRapido.length > 1 ? 's' : ''}` : 'Ticket'}</span><input type="file" accept="image/*,application/pdf" capture="environment" data-rapido-foto hidden></label>
         <button class="btn btn-primary" type="submit">Añadir</button>
       </form>
     </section>
@@ -63,7 +71,7 @@ export function vistaGastos() {
     <section class="kpis kpis-3">
       <div class="kpi"><span class="kpi-label">Total filtrado</span><span class="kpi-value">${fmtEUR(total)}</span><span class="kpi-sub">${lista.length} ${lista.length === 1 ? 'gasto' : 'gastos'}</span></div>
       <div class="kpi"><span class="kpi-label">Extraordinarios</span><span class="kpi-value">${fmtEUR(extra)}</span><span class="kpi-sub">${total ? Math.round((extra / total) * 100) : 0} % del total</span></div>
-      <div class="kpi"><span class="kpi-label">No deducible</span><span class="kpi-value">${fmtEUR(noDed)}</span><span class="kpi-sub">El resto computa en la declaración</span></div>
+      <button class="kpi kpi-btn ${f.cat === 'sinjust' ? 'active' : ''}" data-action="filtro-sinjust"><span class="kpi-label">${raw(CLIP)} Sin justificante</span><span class="kpi-value ${nSin ? 't-warn' : ''}">${nSin}</span><span class="kpi-sub">${nSin ? 'Gastos deducibles sin foto del ticket o factura' : 'Todos los gastos tienen su ticket o factura'}</span></button>
     </section>
 
     <div class="grid-2 grid-wide-left">
@@ -73,7 +81,7 @@ export function vistaGastos() {
             ${sel('piso', opcionesPiso('Todos los pisos'), f.piso, { attrs: 'data-filter="gastos" aria-label="Piso"' })}
             ${sel('anio', [{ v: '', t: 'Todos los años' }, ...anios.map((a) => ({ v: a, t: a }))], f.anio, { attrs: 'data-filter="gastos" aria-label="Año"' })}
             ${sel('mes', [{ v: '', t: 'Todo el año' }, ...Array.from({ length: 12 }, (_, i) => ({ v: String(i + 1).padStart(2, '0'), t: mesNombre(i + 1).replace(/^./, (c) => c.toUpperCase()) }))], f.mes, { attrs: 'data-filter="gastos" aria-label="Mes"' })}
-            ${sel('cat', [{ v: '', t: 'Todas las categorías' }, { v: 'extra', t: 'Solo extraordinarios' }, ...CATEGORIAS.map((c) => ({ v: c.id, t: c.nombre }))], f.cat, { attrs: 'data-filter="gastos" aria-label="Categoría"' })}
+            ${sel('cat', [{ v: '', t: 'Todas las categorías' }, { v: 'sinjust', t: 'Sin justificante' }, { v: 'extra', t: 'Solo extraordinarios' }, ...CATEGORIAS.map((c) => ({ v: c.id, t: c.nombre }))], f.cat, { attrs: 'data-filter="gastos" aria-label="Categoría"' })}
             <label class="search">${raw(ICON.search)}<input type="search" name="q" value="${f.q}" placeholder="Buscar" data-filter="gastos" aria-label="Buscar"></label>
           </div>
         </div>
@@ -108,6 +116,7 @@ function filaGasto(g) {
           ${g.extraordinario ? html` <span class="chip chip-info">Extra</span>` : ''}
           ${g.recurrenteId ? html` <span class="chip chip-soft">Fijo</span>` : ''}
           ${c?.trato === 'no' || g.deducible === false ? html` <span class="chip chip-soft">No deducible</span>` : ''}
+          ${tieneDocs('gasto', g.id) ? html` <span class="chip chip-ok chip-clip" title="Con justificante">${raw(CLIP)}</span>` : sinJustificante(g) ? html` <span class="chip chip-warn" title="Falta la foto del ticket o factura">Sin ticket</span>` : ''}
         </div>
         <div class="row-sub">${p?.nombre || '—'} · ${c?.nombre || g.categoria}${g.proveedor ? ` · ${g.proveedor}` : ''}</div>
       </div>

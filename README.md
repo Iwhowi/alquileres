@@ -58,6 +58,21 @@ por habitación o vivienda, hipoteca y gastos fijos (comunidad, IBI, seguro, sum
 
 Los cálculos fiscales son una estimación orientativa; revísalos con tu asesor.
 
+## Justificantes y documentos
+
+En cada gasto, contrato, hipoteca, reserva y en la ficha de cada piso hay una zona para **hacer una
+foto** (abre la cámara del móvil) o **adjuntar** una imagen o un PDF. El alta rápida de gastos tiene
+también su botón «Ticket». Las fotos se reducen para ocupar poco y se guardan en el dispositivo
+(IndexedDB).
+
+En **Fiscal → Justificantes para el gestor** se ve qué gastos deducibles no tienen ticket o factura y
+se descarga (o se comparte desde el móvil) un ZIP del ejercicio: carpetas por inmueble con gastos,
+contratos, reservas, hipotecas y documentos del piso, más `indice.csv`, el resumen fiscal y la lista
+de lo que falta. Conserva los justificantes al menos 4 años.
+
+La copia JSON no incluye los archivos: para pasarlos a otro dispositivo usa **Ajustes → Copia con
+documentos (ZIP)** y restáurala con «Restaurar copia».
+
 ## Sincronizar móvil y Mac
 
 No hay nube: exporta la copia JSON en un dispositivo (por ejemplo a iCloud Drive) y restáurala en
