@@ -8,33 +8,54 @@
 // Todo es decorativo (aria-hidden, sin eventos de puntero) y de bajo contraste.
 
 export const SECCIONES = [
-  ['ajustes', 'Ajustes'], ['fiscal', 'Fiscal'], ['pisos', 'Pisos'], ['calendario', 'Calendario'],
-  ['gastos', 'Gastos'], ['cobros', 'Cobros'], ['', 'Panel'],
-]; // de abajo (1) a arriba (7)
-const BANDA = 4;
-export const TOP = 1 + SECCIONES.length * BANDA; // ático (29); 0 = bajo; TOP + 1 = azotea; -1 = calle
+  ['ajustes', 'Ajustes', 4], ['fiscal', 'Fiscal', 4], ['pisos', 'Pisos', 8], ['calendario', 'Calendario', 4],
+  ['gastos', 'Gastos', 4], ['cobros', 'Cobros', 4], ['', 'Panel', 4],
+]; // de abajo (1) a arriba (7); el tercer valor es el número de alturas de la planta
+// Pisos tiene 8 alturas: A es el listado y B…H las fichas de cada piso (una por piso).
+const INICIO = [];
+{ let k = 1; for (const [, , n] of SECCIONES) { INICIO.push(k); k += n; } }
+export const TOP = INICIO[INICIO.length - 1] + SECCIONES[SECCIONES.length - 1][2]; // ático; 0 = bajo; TOP + 1 = azotea; -1 = calle
 const S_DE = Object.fromEntries(SECCIONES.map(([k], s) => [k, s]));
-const LETRAS = 'DCBA';
+const LETRAS = 'ABCDEFGH';
 
-const seccionDe = (k) => (k >= 1 && k < TOP ? Math.floor((k - 1) / BANDA) : null);
+function seccionDe(k) {
+  if (k < 1 || k >= TOP) return null;
+  for (let s = SECCIONES.length - 1; s >= 0; s--) if (k >= INICIO[s]) return s;
+  return 0;
+}
+const altura = (k) => { const s = seccionDe(k); return SECCIONES[s][2] - 1 - (k - INICIO[s]); }; // 0 = A (arriba)
 /** Número de planta de una sección (1–7) para el directorio del ascensor. */
 export const numeroSeccion = (pagina) => (S_DE[pagina] ?? 6) + 1;
 export const nombreSeccion = (pagina) => SECCIONES[S_DE[pagina] ?? 6][1];
+const kDe = (s, h) => INICIO[s] + SECCIONES[s][2] - 1 - h; // planta k de la sección s y altura h
 
-/** Planta de entrada de una ruta. Las fichas de piso viven en la planta de Pisos (alturas B, C, D). */
+/**
+ * Planta de entrada de una ruta. Las fichas de piso viven en la planta de Pisos, una altura por piso
+ * (3B, 3C…); la ficha del calendario de un turístico, en la altura B de Calendario.
+ */
 export function plantaDe(pagina, idx = 0) {
   if (pagina === '__portal') return -0.38;
-  if (pagina === 'piso') return 1 + S_DE.pisos * BANDA + (2 - (Math.max(0, idx) % 3));
-  return 1 + (S_DE[pagina] ?? 6) * BANDA + (BANDA - 1);
+  if (pagina === 'piso') return kDe(S_DE.pisos, 1 + (Math.max(0, idx) % 7));
+  if (pagina === 'calendario' && idx > 0) return kDe(S_DE.calendario, 1);
+  return kDe(S_DE[pagina] ?? 6, 0);
 }
 /** Planta más baja a la que se puede bajar con el scroll desde una página. */
-const sueloDe = (pagina) => (pagina === '__portal' ? -0.38 : 1 + (S_DE[pagina === 'piso' ? 'pisos' : pagina] ?? 6) * BANDA);
+function sueloDe(pagina, idx) {
+  if (pagina === '__portal') return -0.38;
+  const s = S_DE[pagina === 'piso' ? 'pisos' : pagina] ?? 6;
+  // En Pisos el scroll del listado recorre 3 alturas; cada ficha baja como mucho una altura.
+  if (pagina === 'pisos') return kDe(s, 3);
+  if (pagina === 'piso') return plantaDe(pagina, idx) - 0.6;
+  if (pagina === 'calendario' && idx > 0) return plantaDe(pagina, idx) - 2;
+  return INICIO[s];
+}
+/** Sección (clave de ruta) a la que pertenece la planta k, para hacerla clicable. */
+export const paginaDePlanta = (k) => (k <= 0 ? 'ajustes' : k >= TOP ? '' : SECCIONES[seccionDe(k)][0]);
 
 export function etiquetaPlanta(k) {
   if (k <= 0) return 'B';
   if (k >= TOP) return 'Á';
-  const s = seccionDe(k);
-  return `${s + 1}${LETRAS[(k - 1) % BANDA]}`;
+  return `${seccionDe(k) + 1}${LETRAS[altura(k)]}`;
 }
 export function nombrePlanta(k) {
   if (k <= 0) return 'Portal';
@@ -196,6 +217,9 @@ const DISTRIBUCIONES = [
   [['comedor', 480], ['tele', 520], ['dormitorio', 520]],
   [['cocina', 660], ['salon', 620], ['bano', 240]],
   [['estudio', 520], ['dormitorio', 560], ['tele', 440]],
+  [['bano', 260], ['salon', 700], ['estudio', 560]],
+  [['tele', 560], ['comedor', 520], ['cocina', 440]],
+  [['dormitorio', 520], ['bano', 260], ['salon', 740]],
 ];
 
 /** Capas SVG de una planta. */
@@ -231,6 +255,8 @@ function capasPlanta(k) {
       if (i < dist.length - 1) L.md += tabique(x - 9, i % 2 === 0);
     });
   }
+  // Planos de suelo y techo en perspectiva: dan profundidad a la sección.
+  L.bk += `<path class="plano suelo" d="M40 ${Y}L110 ${Y - 34}H${W - 110}L${W - 40} ${Y}Z"/><path class="plano techo" d="M40 0L110 22H${W - 110}L${W - 40} 0Z"/>`;
   L.md += `${rc(0, Y, W, HF - Y, 'slab')}${rc(0, 0, 40, Y, 'facade')}${rc(W - 40, 0, 40, Y, 'facade')}`;
   return L;
 }
@@ -292,7 +318,7 @@ export function iniciarEscena() {
     <div class="sky"></div><div class="skyline far"></div><div class="skyline near"></div>
     <div class="edificio"></div><div class="estelas"></div>
     <div class="torre"><div class="torre-estructura"></div><div class="contrapeso"></div>
-      <div class="cabina"><div class="cabina-luz"></div><div class="persona"></div><div class="puerta pi"></div><div class="puerta pd"></div></div></div>`;
+      <div class="cabina" data-action="ascensor" title="Abrir el ascensor"><div class="cabina-luz"></div><div class="persona"></div><div class="puerta pi"></div><div class="puerta pd"></div></div></div>`;
   st.edificio = el.querySelector('.edificio');
   st.torre = el.querySelector('.torre-estructura');
   st.cabina = el.querySelector('.cabina');
@@ -319,7 +345,7 @@ export function iniciarEscena() {
     const arriba = scrollY <= 0 && e.deltaY < 0;
     const abajo = scrollY >= max - 1 && e.deltaY > 0;
     if (max <= 4 || arriba || abajo) {
-      st.empuje = Math.max(-0.45, Math.min(0.45, st.empuje - Math.sign(e.deltaY) * 0.1));
+      st.empuje = Math.max(-0.55, Math.min(0.55, st.empuje - Math.sign(e.deltaY) * 0.18));
       despertar();
     }
   }, { passive: true });
@@ -340,7 +366,8 @@ function plantaScroll() {
   const base = plantaDe(st.pagina, st.idx);
   if (st.pagina === '__portal') return base;
   const max = document.documentElement.scrollHeight - innerHeight;
-  const recorrido = Math.min(base - sueloDe(st.pagina), Math.max(0, max / (innerHeight * 0.55)));
+  // Todo el scroll de la página recorre las alturas de su planta (A → D).
+  const recorrido = (base - sueloDe(st.pagina, st.idx)) * Math.min(1, Math.max(0, max / 160));
   const p = max > 4 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
   return base - p * recorrido;
 }
@@ -427,9 +454,11 @@ function tick(now) {
     st.f = tw.from + (to - tw.from) * easeInOut(t) + signo * rebote;
     fCab = tw.from + (to - tw.from) * easeSine(t); // la cabina se adelanta a la cámara
     const intensidad = Math.sin(Math.PI * t) * Math.min(1, tw.dist / 3);
-    st.escala = 1 - (movil() ? 0.16 : 0.07) * intensidad;
+    // En los viajes largos la cámara se aleja hasta ver el edificio entero de fachada a fachada.
+    st.escala = 1 - (movil() ? 0.16 + Math.min(0.3, tw.dist * 0.012) : 0.07 + Math.min(0.33, tw.dist * 0.014)) * intensidad;
+    st.dirViaje = signo;
     quieto = false;
-    if (t >= 0.6 && !tw.casiHecho) { tw.casiHecho = true; tw.rCasi(); }
+    if (t >= 0.4 && !tw.casiHecho) { tw.casiHecho = true; tw.rCasi(); }
     if (t >= 1) {
       st.tween = null;
       st.escala = 1;
@@ -472,7 +501,8 @@ function pintar(fCab) {
   st.estelas.style.opacity = op.toFixed(2);
 
   // Plantas visibles (virtualizadas). Durante el viaje se alejan, así que se ven más.
-  const margen = st.escala < 0.97 ? 2 : 1;
+  const extra = Math.ceil((1 / st.escala - 1) * (innerHeight / H) * 0.6);
+  const margen = 1 + extra;
   const kmin = Math.max(-1, Math.floor(f - (innerHeight - cy) / H) - margen);
   const kmax = Math.min(TOP + 1, Math.ceil(f + cy / H) + margen - 1);
   for (const [k, el] of st.pool) if (k < kmin || k > kmax) { st.pool.delete(k); el.style.visibility = 'hidden'; st.libres.push(el); }
@@ -494,7 +524,9 @@ function pintar(fCab) {
         el._niebla = el.querySelector('.niebla');
       }
       if (el._numTxt) el._numTxt.textContent = etiquetaPlanta(k);
+      if (el._num) { el._num.dataset.action = 'ir-planta'; el._num.dataset.ir = paginaDePlanta(k); el._num.title = `Ir a ${rotuloPared(k)}`; }
       if (el._rot) el._rot.textContent = rotuloPared(k);
+      if (st.tween) st.luces = null;
       el.className = `planta${k === 0 ? ' bajo' : ''}${k === TOP ? ' atico' : ''}${k === TOP + 1 ? ' azotea' : ''}${k === -1 ? ' calle' : ''}${(k * 7) % 5 < 2 ? ' lit' : ''} t${k % 3}`;
       el.style.visibility = '';
       st.pool.set(k, el);
@@ -508,12 +540,13 @@ function pintar(fCab) {
     if (el._niebla) el._niebla.style.opacity = Math.max(0, Math.min(0.55, Math.abs(d) * 0.5 - 0.12)).toFixed(2);
   }
   const activa = Math.max(-1, Math.min(TOP + 1, Math.round(f)));
-  if (activa !== st.activa) {
+  if (activa !== st.activa) { st.activa = activa; actualizarHud(); }
+  // Las luces solo se recalculan en reposo (no en cada planta que pasa durante el viaje).
+  if (!st.tween && st.luces !== activa) {
     for (const [k, el] of st.pool) { el.classList.toggle('on', k === activa); el.classList.toggle('cerca', Math.abs(k - activa) === 1); }
-    st.activa = activa;
-    actualizarHud();
-  } else {
-    for (const [k, el] of st.pool) if (k === activa && !el.classList.contains('on')) el.classList.add('on');
+    st.luces = activa;
+  } else if (!st.tween) {
+    for (const [k, el] of st.pool) if (k === activa && !el.classList.contains('on')) { el.classList.add('on'); }
   }
 
   // Torre del ascensor: la estructura se desplaza con el edificio; la cabina se adelanta en los viajes.

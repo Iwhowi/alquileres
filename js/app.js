@@ -34,6 +34,7 @@ function destino(seccion, id) {
     const i = Math.max(0, app.s?.pisos.findIndex((p) => p.id === id) ?? 0);
     return { pagina: 'piso', idx: i, nombre: app.s?.pisos[i]?.nombre || 'Ficha del piso' };
   }
+  if (seccion === 'calendario' && id) return { pagina: 'calendario', idx: 1, nombre: `Calendario · ${app.s?.pisos.find((p) => p.id === id)?.nombre || ''}` };
   return { pagina: PAGINAS.includes(seccion) ? seccion : '', idx: 0 };
 }
 
@@ -106,7 +107,7 @@ app.render = render;
 /** Muestra la página en cuanto la cabina empieza a frenar (o a los 0,6 s, por si acaso). */
 function llegar(main, viaje) {
   const id = ++navId;
-  Promise.race([viaje.casi, new Promise((r) => setTimeout(r, 600))]).then(() => {
+  Promise.race([viaje.casi, new Promise((r) => setTimeout(r, 400))]).then(() => {
     if (id !== navId) return;
     main.classList.remove('en-viaje');
     entrar(main);
@@ -195,6 +196,7 @@ const acciones = {
     render();
   },
   'toggle-extra': (el) => { app.ui.incluirExtra = el.checked; render(); },
+  'ir-planta': (el) => { if (app.s) location.hash = `#/${el.dataset.ir}`; },
   ascensor: () => {
     if (!app.s) return;
     const actual = destino(ruta().seccion, ruta().id).pagina;
@@ -514,7 +516,7 @@ function navegar() {
     if (miId !== navId) return;
     render({ oculto: true });
     llegar(main, viaje);
-  }, enCurso ? 0 : 170);
+  }, enCurso ? 0 : 120);
 }
 
 // Al pasar por el menú, el edificio se asoma hacia la planta de destino.

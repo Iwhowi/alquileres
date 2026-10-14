@@ -26,12 +26,12 @@ export function entrar(main) {
   if (reducido()) { main.querySelectorAll('.kpi').forEach(contar); return; }
   const obs = observar();
   const els = [...main.querySelectorAll(OBJETIVOS)].filter((el) => !el.parentElement.closest('.card, .welcome-options'));
-  for (const el of els) {
-    // Los bloques muy altos (listas largas) no se esconden: se verían vacíos al hacer scroll.
-    if (el.offsetHeight > innerHeight * 0.8) { el.classList.add('rv', 'in'); el.style.setProperty('--d', '60ms'); continue; }
+  els.forEach((el, i) => {
+    // Los bloques muy altos (listas largas) se muestran ya, pero en su turno del escalonado.
+    if (el.offsetHeight > innerHeight * 0.8) { el.style.setProperty('--d', `${Math.min(i, 8) * 70}ms`); el.classList.add('rv', 'in'); return; }
     el.classList.add('rv');
     obs.observe(el);
-  }
+  });
   main.querySelectorAll('.chart .bar').forEach((b, i) => b.style.setProperty('--i', i));
   main.querySelectorAll('.cal-bar').forEach((b, i) => b.style.setProperty('--i', i));
   main.querySelectorAll('.aviso').forEach((b, i) => b.style.setProperty('--i', i));

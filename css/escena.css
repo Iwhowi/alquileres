@@ -159,7 +159,7 @@ body { background: transparent; }
 .cloud { animation: nube 60s linear infinite alternate; }
 .cloud.c2 { animation-duration: 85s; animation-direction: alternate-reverse; }
 .car { animation: coche 16s linear infinite; }
-.planta:not(.on):not(.cerca) * { animation-play-state: paused; }
+.planta:not(.on):not(.cerca) :is(.sway, .curtain, .steam path, .drops path, .car) { animation-play-state: paused; }
 @keyframes sway { from { transform: rotate(-2.2deg); } to { transform: rotate(2.4deg); } }
 @keyframes cortina { from { transform: skewX(-1.5deg) scaleX(0.96); } to { transform: skewX(1.5deg) scaleX(1.04); } }
 @keyframes vapor { 0% { opacity: 0; transform: translateY(10px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translateY(-24px); } }
@@ -295,7 +295,7 @@ body:not([data-ruta]) .hud { display: none; }
 .seg-pill { position: absolute; z-index: -1; top: 3px; bottom: 3px; border-radius: 7px; background: var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); transition: left 0.45s var(--spring), width 0.35s var(--ease); }
 
 /* ───────────── Cambio de página: salir → viajar (escena a la vista) → llegar ───────────── */
-#main.saliendo > * { animation: salir 0.19s var(--ease) forwards; }
+#main.saliendo > * { animation: salir 0.12s var(--ease) forwards; }
 #main[data-dir="up"].saliendo > * { animation-name: salirArriba; }
 #main.en-viaje { opacity: 0; pointer-events: none; }
 @keyframes salir { to { opacity: 0; transform: translateY(-30px) scale(0.985); } }
@@ -381,7 +381,7 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
   -webkit-mask: linear-gradient(180deg, transparent, #000 25%, #000 75%, transparent); mask: linear-gradient(180deg, transparent, #000 25%, #000 75%, transparent);
 }
 /* Escena en reposo: se pausa todo para no gastar batería */
-#escena.quieto *, #escena.quieto *::before, #escena.quieto *::after { animation-play-state: paused !important; }
+#escena.quieto :is(.sway, .curtain, .steam path, .drops path, .cloud, .car, .cabina-luz) { animation-play-state: paused !important; }
 /* Rótulo de la sección en la pared, bajo el número */
 .planta-num small { display: block; margin-top: 12px; padding-left: 8px; font: 650 12px var(--font); letter-spacing: 0.22em; text-transform: uppercase; color: var(--sc-num); transition: color 0.8s; }
 .planta.on .planta-num small { color: var(--sc-num-on); }
@@ -419,3 +419,23 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
 .boton-planta b { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--line-2); font: 700 16px ui-monospace, Menlo, monospace; color: var(--ink-2); flex-shrink: 0; transition: all 0.3s; }
 .boton-planta.on b { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); }
 .boton-planta small { display: block; color: var(--muted); font-size: 12px; }
+
+/* ───────────── Ronda 3 de diseño ───────────── */
+/* El edificio se puede tocar entre los bloques de contenido: números de planta y cabina */
+.shell { pointer-events: none; }
+.shell > :not(main), main > * { pointer-events: auto; }
+.planta-num, .cabina { pointer-events: auto; cursor: pointer; }
+.planta-num:hover span { -webkit-text-stroke-color: var(--accent); }
+.planta-num:hover small { color: var(--accent); }
+.cabina:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 10px 26px -8px rgba(0, 0, 0, 0.35); }
+.plano.suelo { fill: color-mix(in srgb, var(--sc-slab) 45%, transparent); }
+.plano.techo { fill: color-mix(in srgb, var(--sc-slab) 25%, transparent); }
+.hud-num { user-select: none; -webkit-user-select: none; }
+@media (max-width: 899px) {
+  :root { --glass: color-mix(in srgb, var(--surface) 78%, transparent); }
+  .tip { padding-bottom: 18px; padding-right: 76px; }
+}
+@media (max-width: 1179px) {
+  .torre { width: 18px; right: 3px; }
+  .cabina { width: 18px; height: 28px; margin-left: -9px; top: calc(var(--suelo-y, 70%) - var(--planta-h) * 0.04 - 28px); }
+}
