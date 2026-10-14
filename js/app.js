@@ -12,10 +12,10 @@ import { vistaCalendario } from './views/calendario.js';
 import { vistaFiscal, calculoFiscal } from './views/fiscal.js';
 import { vistaAjustes } from './views/ajustes.js';
 import * as F from './forms.js';
-import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos } from './building.js';
+import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.0.0';
+app.version = '2.1.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -74,6 +74,7 @@ function render({ oculto = false } = {}) {
   document.body.dataset.ruta = activa || 'panel';
   const entrando = seccion !== ultimaSeccion || id !== ultimoId;
   const ids = app.s.pisos.map((p) => p.id).join('|');
+  nombrarPisos(app.s.pisos.map((p) => p.nombre));
   if (ids !== render._ids) { definirPisos(app.s.pisos.map((p) => p.id)); render._ids = ids; }
   const primera = ultimaSeccion === null;
   const scroll = entrando ? 0 : window.scrollY;
@@ -109,7 +110,7 @@ app.render = render;
 /** Muestra la página en cuanto la cabina empieza a frenar (o a los 0,6 s, por si acaso). */
 function llegar(main, viaje) {
   const id = ++navId;
-  Promise.race([viaje.casi, new Promise((r) => setTimeout(r, 250))]).then(() => {
+  Promise.race([viaje.casi, new Promise((r) => setTimeout(r, viaje.espera || 250))]).then(() => {
     if (id !== navId) return;
     main.classList.remove('en-viaje');
     entrar(main);
@@ -216,7 +217,9 @@ const acciones = {
       titulo: 'Ascensor',
       cuerpo: html`<p class="muted">Cada sección es una planta del edificio. Elige a cuál quieres ir.</p>
         <div class="ascensor">${[...SECCIONES].reverse().map(([k, nombre]) => html`
-          <button type="button" class="boton-planta${k === pag ? ' on' : ''}" data-ir="${k}"><b>${numeroSeccion(k)}</b><span><strong>${nombre}</strong><small>Planta ${numeroSeccion(k)}</small></span></button>`)}</div>`,
+          <button type="button" class="boton-planta${k === pag ? ' on' : ''}" data-ir="${k}"><b>${numeroSeccion(k)}</b><span><strong>${nombre}</strong><small>Planta ${numeroSeccion(k)}</small></span></button>`)}</div>
+        <h3 class="sub-h">Planta 3 · fichas de cada piso</h3>
+        <div class="ascensor-pisos">${app.s.pisos.map((p, i) => html`<button type="button" class="chip-planta${ruta().id === p.id ? ' on' : ''}" data-ir="piso/${encodeURIComponent(p.id)}"><b>3${'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[3 + 2 * i] || ''}</b>${p.nombre}</button>`)}</div>`,
     });
     document.querySelectorAll('#dialogo [data-ir]').forEach((b) => b.addEventListener('click', () => { F.cerrarDialogo(); location.hash = `#/${b.dataset.ir}`; }));
   },
@@ -263,21 +266,6 @@ const acciones = {
   'exportar-json': () => exportarJSON(),
   'exportar-csv': (el) => exportarCSV(el.dataset.tabla),
   'exportar-fiscal': () => exportarFiscal(),
-  fab: () => {
-    abrirDialogo({
-      titulo: 'Añadir',
-      cuerpo: html`<div class="fab-menu">
-        <button type="button" data-fab="gasto">${raw(ICON.gastos)}<span>Gasto</span></button>
-        <button type="button" data-fab="cobro">${raw(ICON.cobros)}<span>Cobro manual</span></button>
-        ${app.s.pisos.some((p) => p.modalidad === 'turistico') ? html`<button type="button" data-fab="reserva">${raw(ICON.calendario)}<span>Reserva turística</span></button>` : ''}
-      </div>`,
-    });
-    document.querySelectorAll('[data-fab]').forEach((b) => b.addEventListener('click', () => {
-      const t = b.dataset.fab;
-      F.cerrarDialogo();
-      setTimeout(() => (t === 'gasto' ? F.formGasto(null) : t === 'cobro' ? F.formCobro(null) : F.formReserva(null)), 0);
-    }));
-  },
   'menu-mas': () => {
     abrirDialogo({
       titulo: 'Más',
@@ -539,15 +527,6 @@ document.addEventListener('pointerout', (e) => {
   const a = e.target.closest?.('.nav-item[data-pagina]');
   if (a && !a.contains(e.relatedTarget)) asomar(null);
 });
-
-// En móvil, el botón + se esconde al bajar y reaparece al subir (o al llegar arriba).
-let yPrev = 0;
-addEventListener('scroll', () => {
-  const y = scrollY;
-  if (Math.abs(y - yPrev) < 6) return;
-  document.documentElement.classList.toggle('fab-oculto', y > yPrev && y > 60);
-  yPrev = y;
-}, { passive: true });
 
 function iniciar() {
   iniciarEscena();

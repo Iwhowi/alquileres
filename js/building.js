@@ -72,6 +72,15 @@ function sueloDe(pagina, idx) {
   if (pagina === 'calendario' && idx > 0) return plantaDe(pagina, idx) - 2;
   return INICIO[s];
 }
+let nombresPisos = [];
+export function nombrarPisos(nombres) { nombresPisos = nombres; }
+/** Rótulo corto de una planta: en la de Pisos, el nombre del piso de cada ficha. */
+function nombreCorto(k) {
+  const s = seccionDe(k);
+  if (s === S_DE.pisos && altura(k) >= LISTADO) return nombresPisos[Math.floor((altura(k) - LISTADO) / 2)] || 'Pisos';
+  return rotuloPared(k);
+}
+
 /** Para hacer clicable un número de planta: a qué ruta lleva y a qué fracción del scroll. */
 function destinoDePlanta(k) {
   if (k <= 0) return { ir: 'ajustes', frac: 1 };
@@ -325,6 +334,7 @@ function htmlPlanta(k) {
     h = `<div class="ly bk">${svg('', L.bk)}</div><div class="ly md">${svg('', L.md)}</div><div class="ly fg">${svg('', L.fg)}</div>
       <div class="planta-num"><span>${etiquetaPlanta(k)}</span><small>${rotuloPared(k)}</small></div>
       <div class="niebla"></div>
+      <div class="placa"><b>${etiquetaPlanta(k)}</b><small>${rotuloPared(k)}</small></div>
       <div class="balcon"><i class="b-losa"></i><i class="b-barandilla"></i><i class="b-maceta"></i></div>`;
   }
   cache.set(k, h);
@@ -379,10 +389,17 @@ export function iniciarEscena() {
     const max = document.documentElement.scrollHeight - innerHeight;
     const arriba = scrollY <= 0 && e.deltaY < 0;
     const abajo = scrollY >= max - 1 && e.deltaY > 0;
-    if (max <= 4 || arriba || abajo) {
-      // Sin scroll, la rueda asoma a la altura siguiente de verdad (el indicador cambia).
-      const tope = max <= 4 ? 0.75 : 0.55;
-      st.empuje = Math.max(-tope, Math.min(tope, st.empuje - Math.sign(e.deltaY) * 0.2));
+    if (max <= 4) {
+      // Página sin scroll: la rueda baja (o sube) de altura de verdad y se queda en ella.
+      const ahora = performance.now();
+      if (ahora - (st.tRueda || 0) > 260) {
+        st.tRueda = ahora;
+        const fondo = plantaDe(st.pagina, st.idx) - sueloDe(st.pagina, st.idx);
+        st.bajada = Math.max(0, Math.min(fondo, (st.bajada || 0) + Math.sign(e.deltaY)));
+        despertar();
+      }
+    } else if (arriba || abajo) {
+      st.empuje = Math.max(-0.55, Math.min(0.55, st.empuje - Math.sign(e.deltaY) * 0.2));
       despertar();
     }
   }, { passive: true });
@@ -406,7 +423,8 @@ function plantaScroll() {
   const max = document.documentElement.scrollHeight - innerHeight;
   // Todo el scroll de la página recorre las alturas de su planta (A → D).
   const recorrido = (base - sueloDe(st.pagina, st.idx)) * Math.min(1, Math.max(0, max / 160));
-  const p = max > 4 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+  if (max <= 4) return base - (st.bajada || 0);
+  const p = Math.min(1, Math.max(0, scrollY / max));
   return base - p * recorrido;
 }
 
@@ -424,6 +442,7 @@ export function irAPlanta(pagina, { idx = 0, instantaneo = false, desde = null, 
   st.idx = idx;
   st.nombre = nombre;
   st.empuje = 0;
+  st.bajada = 0;
   if (desde != null && !reducido()) { st.f = desde; st.activa = null; }
   actualizarHud();
   if (misma && st.tween) return { casi: st.tween.casi, fin: st.tween.fin };
@@ -437,7 +456,10 @@ export function irAPlanta(pagina, { idx = 0, instantaneo = false, desde = null, 
     return { casi: Promise.resolve(), fin: Promise.resolve() };
   }
   if (st.tween) { st.tween.rCasi(); st.tween.rFin(); }
-  const tw = { from: st.f, t0: performance.now(), dur: Math.max(450, Math.min(720, 420 + dist * 14)), dist, sube: destino > st.f, casiHecho: false };
+  // Viajes largos algo más lentos (hasta 0,9 s) para leer las plantas al pasar; el contenido espera
+  // a que se vea la vista general del edificio.
+  const dur = Math.max(450, Math.min(dist > 15 ? 900 : 720, 420 + dist * 14));
+  const tw = { from: st.f, t0: performance.now(), dur, dist, sube: destino > st.f, casiHecho: false, casiT: dist > 8 ? 0.55 : 0.3 };
   tw.casi = new Promise((r) => { tw.rCasi = r; });
   tw.fin = new Promise((r) => { tw.rFin = r; });
   st.tween = tw;
@@ -445,7 +467,7 @@ export function irAPlanta(pagina, { idx = 0, instantaneo = false, desde = null, 
   st.el.classList.toggle('subiendo', tw.sube);
   st.el.classList.remove('llegada');
   despertar();
-  return { casi: tw.casi, fin: tw.fin };
+  return { casi: tw.casi, fin: tw.fin, espera: dur * tw.casiT + 60 };
 }
 
 /** Acorta el viaje en curso para que termine en ~0,15 s. */
@@ -491,12 +513,13 @@ function tick(now) {
     const rebote = t > 0.74 ? Math.sin(Math.PI * ((t - 0.74) / 0.26)) * ov : 0;
     st.f = tw.from + (to - tw.from) * easeInOut(t) + signo * rebote;
     fCab = tw.from + (to - tw.from) * easeSine(t); // la cabina se adelanta a la cámara
-    const intensidad = Math.sin(Math.PI * t) * Math.min(1, tw.dist / 3);
+    // La vista general llega antes (pico hacia el 30 %), mientras el contenido aún no ha vuelto.
+    const intensidad = Math.sin(Math.PI * Math.min(1, t / 0.6)) * Math.min(1, tw.dist / 3);
     // En los viajes largos la cámara se aleja hasta ver el edificio entero de fachada a fachada.
     st.escala = 1 - (movil() ? 0.16 + Math.min(0.3, tw.dist * 0.012) : 0.07 + Math.min(0.33, tw.dist * 0.014)) * intensidad;
     st.dirViaje = signo;
     quieto = false;
-    if (t >= 0.3 && !tw.casiHecho) { tw.casiHecho = true; tw.rCasi(); }
+    if (t >= tw.casiT && !tw.casiHecho) { tw.casiHecho = true; tw.rCasi(); }
     if (t >= 1) {
       st.tween = null;
       st.escala = 1;
@@ -514,7 +537,7 @@ function tick(now) {
   }
   st.vel = (st.vel * 0.7) + (Math.abs(st.f - st.fPrev) / dt * 1000) * 0.3; // plantas por segundo
   // Durante el viaje (antes de que vuelva el contenido) el cristal se aclara para dejar ver el edificio.
-  const mov = !!st.tween && (now - st.tween.t0) / st.tween.dur < 0.3;
+  const mov = !!st.tween && (now - st.tween.t0) / st.tween.dur < st.tween.casiT;
   if (mov !== st.movClase) { document.documentElement.classList.toggle('escena-mov', mov); st.movClase = mov; }
   st.fPrev = st.f;
   st.empuje *= 1 - suave(260);
@@ -571,6 +594,7 @@ function pintar(fCab) {
         el._numTxt = el.querySelector('.planta-num span');
         el._rot = el.querySelector('.planta-num small');
         el._niebla = el.querySelector('.niebla');
+        el._placa = el.querySelector('.placa');
       }
       if (el._numTxt) el._numTxt.textContent = etiquetaPlanta(k);
       if (el._num) {
@@ -579,8 +603,10 @@ function pintar(fCab) {
         el._num.dataset.ir = d.ir;
         el._num.dataset.frac = String(d.frac);
         el._num.title = d.ir.startsWith('piso/') ? 'Abrir la ficha de este piso' : `Ir a ${rotuloPared(k)}`;
+        if (el._placa) { el._placa.dataset.action = 'ir-planta'; el._placa.dataset.ir = d.ir; el._placa.dataset.frac = String(d.frac); el._placa.title = el._num.title; }
       }
       if (el._rot) el._rot.textContent = rotuloPared(k);
+      if (el._placa) { el._placa.firstElementChild.textContent = etiquetaPlanta(k); el._placa.lastElementChild.textContent = nombreCorto(k); }
       if (st.tween) st.luces = null;
       el.className = `planta${k === 0 ? ' bajo' : ''}${k === TOP ? ' atico' : ''}${k === TOP + 1 ? ' azotea' : ''}${k === -1 ? ' calle' : ''}${(k * 7) % 5 < 2 ? ' lit' : ''} t${k % 3}`;
       el.style.visibility = '';
@@ -643,6 +669,7 @@ function actualizarHud() {
   }
   const nom = st.nombre || (st.pagina === '__portal' ? 'Portal' : st.pagina === 'piso' ? 'Ficha del piso' : nombreSeccion(st.pagina));
   hud.querySelector('.hud-nom').textContent = nom;
-  hud.querySelector('.hud-planta').textContent = nombrePlanta(k);
+  const s2 = seccionDe(k);
+  hud.querySelector('.hud-planta').textContent = s2 === S_DE.pisos && altura(k) >= LISTADO ? `${nombrePlanta(k)} · ${nombreCorto(k)}` : nombrePlanta(k);
   hud.dataset.dir = st.tween ? (st.tween.sube ? 'up' : 'down') : '';
 }

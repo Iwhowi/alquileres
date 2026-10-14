@@ -327,9 +327,6 @@ body:not([data-ruta]) .hud { display: none; }
 .row:hover { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
 .icon-btn { transition: background 0.15s, color 0.15s, transform 0.25s var(--spring); }
 .icon-btn:active { transform: scale(0.9); }
-.fab { transition: transform 0.35s var(--spring), box-shadow 0.3s; }
-.fab:hover { transform: scale(1.06) rotate(90deg); }
-.fab:active { transform: scale(0.94); }
 dialog[open] { animation: dlg 0.42s var(--spring); }
 @keyframes dlg { from { opacity: 0; transform: translateY(18px) scale(0.96); } }
 dialog::backdrop { animation: fondo 0.3s var(--ease); }
@@ -367,13 +364,13 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
 
 /* Consejo de bienvenida */
 .tip { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; }
-.tip-ic { width: 46px; height: 46px; border-radius: 14px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; animation: flotar 3s ease-in-out infinite; }
+.tip-ic { width: 46px; height: 46px; border-radius: 14px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; animation: flotar 3s ease-in-out 3; }
 .tip ol { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13.5px; display: grid; gap: 2px; }
 @keyframes flotar { 50% { transform: translateY(-4px); } }
 @media (max-width: 640px) { .tip { grid-template-columns: 1fr; } .tip-ic { display: none; } }
 
 /* ───────────── Ronda 2 de diseño ───────────── */
-.ly.bk > svg, .ly.fg, .planta-num, .niebla, .cabina, .estelas { will-change: transform, opacity; }
+.ly.bk > svg, .ly.fg, .planta-num, .cabina { will-change: transform; }
 .niebla { position: absolute; inset: 0; background: linear-gradient(180deg, var(--sky-mid), var(--sky-lo)); opacity: 0; pointer-events: none; }
 .estelas {
   position: absolute; top: 0; bottom: 0; left: var(--b-left); right: var(--gutter); opacity: 0; pointer-events: none;
@@ -407,7 +404,6 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
   :root { --muted: #9aa2ab; --sc-glass: rgba(80, 120, 170, 0.32); }
   .torre-estructura { border-color: rgba(190, 205, 225, 0.4); }
 }
-@media (max-width: 899px) { :root { --glass: color-mix(in srgb, var(--surface) 84%, transparent); } .tip { padding-bottom: 76px; } }
 
 /* Directorio del ascensor */
 .ascensor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -432,8 +428,6 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
 .plano.techo { fill: color-mix(in srgb, var(--sc-slab) 25%, transparent); }
 .hud-num { user-select: none; -webkit-user-select: none; }
 @media (max-width: 899px) {
-  :root { --glass: color-mix(in srgb, var(--surface) 78%, transparent); }
-  .tip { padding-bottom: 18px; padding-right: 76px; }
 }
 @media (max-width: 1179px) {
   .torre { width: 18px; right: 3px; }
@@ -460,9 +454,7 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
 /* Móvil: mientras el edificio se mueve, el cristal se aclara */
 @media (max-width: 899px) {
   .card, .kpi, .piso-card, .quick-tile, .month-nav, .page-head { transition: background-color 0.35s ease; }
-  html.escena-mov { --glass: color-mix(in srgb, var(--surface) 62%, transparent); --glass-strong: color-mix(in srgb, var(--surface) 80%, transparent); }
 }
-.glow, .beam { will-change: opacity; }
 
 /* ───────────── Ronda 5 de diseño ───────────── */
 :root { --muted: #5d646d; }
@@ -475,10 +467,37 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
   .planta-num { top: 2%; }
   .planta-num span { font-size: 84px; }
   .planta-num small { padding: 8px 12px 10px 8px; margin-top: 4px; }
-  /* El botón + se esconde al bajar para no tapar datos y vuelve al subir */
-  .fab { transition: transform 0.35s var(--spring), opacity 0.25s; }
-  html.fab-oculto .fab { transform: translateY(140%) scale(0.8); opacity: 0; pointer-events: none; }
 }
 
-/* Móvil: sin botón flotante; el panel tiene accesos rápidos y cada página su botón de alta */
-@media (max-width: 899px) { .fab { display: none !important; } .tip { padding-right: 18px; } }
+
+/* ───────────── Ronda 6 de diseño ───────────── */
+.fab { display: none !important; }
+.planta { contain: layout style; }
+/* Placa de planta junto a la torre (escritorio): siempre visible y clicable */
+.placa { display: none; }
+@media (min-width: 1180px) {
+  .placa {
+    display: flex; flex-direction: column; align-items: center; position: absolute; left: calc(100% + 4px); top: 18%; width: 46px; padding: 6px 2px;
+    border-radius: 10px; background: var(--glass-strong); border: 1px solid var(--line); pointer-events: auto; cursor: pointer;
+    transition: transform 0.3s var(--spring), border-color 0.2s, background 0.3s;
+  }
+  .placa b { font: 700 14px ui-monospace, Menlo, monospace; color: var(--ink-2); }
+  .placa small { font-size: 8.5px; letter-spacing: 0.04em; color: var(--muted); max-width: 44px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .placa:hover { transform: scale(1.08); border-color: var(--accent); }
+  .planta.on .placa { background: var(--accent); border-color: var(--accent); }
+  .planta.on .placa b, .planta.on .placa small { color: var(--accent-ink); }
+}
+/* Directorio: fichas de la planta de Pisos */
+.ascensor-pisos { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-planta { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); font: inherit; font-size: 13.5px; color: inherit; cursor: pointer; }
+.chip-planta b { font: 700 12px ui-monospace, Menlo, monospace; padding: 3px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.chip-planta.on, .chip-planta:hover { border-color: var(--accent); }
+/* Colores con contraste AA */
+:root { --c-airbnb: #b23a4f; --c-booking: #2d5799; --c-directo: #23664f; --c-otro: #5f4f91; }
+.tag-turistico { color: #b23a4f; }
+@media (prefers-color-scheme: dark) {
+  :root { --c-airbnb: #e0707f; --c-booking: #7aa2e0; --c-directo: #5fb796; --c-otro: #a596d6; }
+  .tag-turistico { color: #ec8c99; }
+  .cal-bar { color: #0d1218; }
+  .badge, .tab .badge { color: #1a0c0e; }
+}
