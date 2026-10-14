@@ -1,24 +1,47 @@
 // Escena de fondo: un edificio de viviendas en sección (como una casa de muñecas) que hace de
 // fondo de toda la app, con un ascensor panorámico en la fachada.
-//  · Cada página tiene su planta de entrada; el ascensor viaja hasta ella al cambiar de página.
-//  · Al hacer scroll se baja de planta (una planta cada ~1,6 alturas de planta de scroll).
-//  · Cada planta tiene tres capas (pared del fondo, muebles y primer plano) con paralaje.
+//  · Cada sección de la app es una planta del edificio (7 Panel … 1 Ajustes, B = portal) y tiene
+//    cuatro alturas (A arriba … D abajo). Al cambiar de página el ascensor viaja a su planta.
+//  · Al hacer scroll se baja dentro de la planta de la sección (A → D), sin invadir otras secciones.
+//  · Cada planta tiene tres capas (pared del fondo, muebles y primer plano) con paralaje y niebla.
 // Las plantas se virtualizan: solo existen en el DOM las que están cerca de la cámara.
 // Todo es decorativo (aria-hidden, sin eventos de puntero) y de bajo contraste.
 
-export const TOP = 46; // índice del ático; 0 = bajo (portal); TOP + 1 = azotea; -1 = calle
-const PAGINAS = { '': 46, cobros: 38, gastos: 30, calendario: 23, pisos: 19, fiscal: 8, ajustes: 3 };
-const PISO_DETALLE = 17; // la ficha de cada piso vive en su propia planta, por debajo de Pisos
-export const NOMBRE_PAGINA = { '': 'Panel', cobros: 'Cobros', gastos: 'Gastos', calendario: 'Calendario', pisos: 'Pisos', fiscal: 'Fiscal', ajustes: 'Ajustes', piso: 'Ficha del piso', __portal: 'Portal' };
+export const SECCIONES = [
+  ['ajustes', 'Ajustes'], ['fiscal', 'Fiscal'], ['pisos', 'Pisos'], ['calendario', 'Calendario'],
+  ['gastos', 'Gastos'], ['cobros', 'Cobros'], ['', 'Panel'],
+]; // de abajo (1) a arriba (7)
+const BANDA = 4;
+export const TOP = 1 + SECCIONES.length * BANDA; // ático (29); 0 = bajo; TOP + 1 = azotea; -1 = calle
+const S_DE = Object.fromEntries(SECCIONES.map(([k], s) => [k, s]));
+const LETRAS = 'DCBA';
 
-/** Planta de entrada de una ruta. `idx` = posición del piso para las fichas. */
+const seccionDe = (k) => (k >= 1 && k < TOP ? Math.floor((k - 1) / BANDA) : null);
+/** Número de planta de una sección (1–7) para el directorio del ascensor. */
+export const numeroSeccion = (pagina) => (S_DE[pagina] ?? 6) + 1;
+export const nombreSeccion = (pagina) => SECCIONES[S_DE[pagina] ?? 6][1];
+
+/** Planta de entrada de una ruta. Las fichas de piso viven en la planta de Pisos (alturas B, C, D). */
 export function plantaDe(pagina, idx = 0) {
   if (pagina === '__portal') return -0.38;
-  if (pagina === 'piso') return PISO_DETALLE - Math.max(0, idx);
-  return PAGINAS[pagina] ?? TOP;
+  if (pagina === 'piso') return 1 + S_DE.pisos * BANDA + (2 - (Math.max(0, idx) % 3));
+  return 1 + (S_DE[pagina] ?? 6) * BANDA + (BANDA - 1);
 }
-export const nombrePlanta = (k) => (k <= 0 ? 'Bajo' : k >= TOP ? 'Ático' : `Planta ${k}`);
-export const etiquetaPlanta = (k) => (k <= 0 ? 'B' : k >= TOP ? 'Á' : String(k));
+/** Planta más baja a la que se puede bajar con el scroll desde una página. */
+const sueloDe = (pagina) => (pagina === '__portal' ? -0.38 : 1 + (S_DE[pagina === 'piso' ? 'pisos' : pagina] ?? 6) * BANDA);
+
+export function etiquetaPlanta(k) {
+  if (k <= 0) return 'B';
+  if (k >= TOP) return 'Á';
+  const s = seccionDe(k);
+  return `${s + 1}${LETRAS[(k - 1) % BANDA]}`;
+}
+export function nombrePlanta(k) {
+  if (k <= 0) return 'Portal';
+  if (k >= TOP) return 'Ático';
+  return `Planta ${etiquetaPlanta(k)}`;
+}
+const rotuloPared = (k) => (k <= 0 ? 'Portal' : k >= TOP ? 'Ático' : SECCIONES[seccionDe(k)][1]);
 
 /* ───────────── Dibujo (SVG, 1600 × 700 por planta; suelo en y = 672) ───────────── */
 
@@ -137,6 +160,13 @@ function tabique(x, puerta = true) {
 
 /* ───────────── Habitaciones en tres capas: fondo (bk), muebles (md) y primer plano (fg) ───────────── */
 
+/** Silueta de un vecino (sentado o de pie). */
+function vecino(x, sentado = false) {
+  return sentado
+    ? `<g class="vecino"><circle cx="${x}" cy="${Y - 178}" r="17" class="ln acc"/><path class="ln acc" d="M${x - 24} ${Y - 70}c0 -50 6 -84 24 -84s24 34 24 84z"/></g>`
+    : `<g class="vecino"><circle cx="${x}" cy="${Y - 262}" r="18" class="ln acc"/><path class="ln acc" d="M${x - 26} ${Y - 120}c0 -70 8 -118 26 -118s26 48 26 118zM${x - 14} ${Y - 120}v120M${x + 14} ${Y - 120}v120"/></g>`;
+}
+
 function azulejos(x0, w, y0 = 300) {
   let s = rc(x0, y0, w, Y - y0, 'tile');
   for (let y = y0 + 40; y < Y; y += 40) s += ln(`M${x0} ${y}H${x0 + w}`, 'thin');
@@ -146,11 +176,11 @@ function azulejos(x0, w, y0 = 300) {
 const HABS = {
   salon: (x0, w) => ({
     bk: `${ventana(x0 + w * 0.5 - 95)}${cuadro(x0 + 60, 210, 120, 150)}`,
-    md: `${lampara(x0 + w * 0.42)}${alfombra(x0 + w * 0.18, w * 0.6)}${sofa(x0 + w * 0.18)}${mesaCentro(x0 + w * 0.62)}${lamparaPie(x0 + 50)}`,
+    md: `${lampara(x0 + w * 0.42)}${alfombra(x0 + w * 0.18, w * 0.6)}${sofa(x0 + w * 0.18)}${vecino(x0 + w * 0.18 + 200, true)}${mesaCentro(x0 + w * 0.62)}${lamparaPie(x0 + 50)}`,
     fg: planta(x0 + w - 70, 1.15),
   }),
   tele: (x0, w) => ({ bk: ventana(x0 + w - 260, 170), md: `${tele(x0 + 50)}${lampara(x0 + w * 0.5, 0, 120)}`, fg: planta(x0 + w * 0.62, 0.9) }),
-  cocina: (x0, w) => ({ bk: azulejos(x0 + 20, w - 40), md: `${cocina(x0 + 40)}${lampara(x0 + w * 0.35, 0, 110)}${lampara(x0 + w * 0.6, 0, 110)}`, fg: '' }),
+  cocina: (x0, w) => ({ bk: azulejos(x0 + 20, w - 40), md: `${cocina(x0 + 40)}${vecino(x0 + 330)}${lampara(x0 + w * 0.35, 0, 110)}${lampara(x0 + w * 0.6, 0, 110)}`, fg: '' }),
   comedor: (x0, w) => ({
     bk: `${ventana(x0 + w * 0.5 - 95)}${cuadro(x0 + w - 170, 230, 110, 130)}`,
     md: `${comedor(x0 + w * 0.5 - 130)}${lampara(x0 + w * 0.5, 0, 170)}`,
@@ -231,7 +261,8 @@ function htmlPlanta(k) {
   } else {
     const L = capasPlanta(k);
     h = `<div class="ly bk">${svg('', L.bk)}</div><div class="ly md">${svg('', L.md)}</div><div class="ly fg">${svg('', L.fg)}</div>
-      <div class="planta-num"><span>${etiquetaPlanta(k)}</span></div>
+      <div class="planta-num"><span>${etiquetaPlanta(k)}</span><small>${rotuloPared(k)}</small></div>
+      <div class="niebla"></div>
       <div class="balcon"><i class="b-losa"></i><i class="b-barandilla"></i><i class="b-maceta"></i></div>`;
   }
   cache.set(k, h);
@@ -243,12 +274,13 @@ const variante = (k) => (k === -1 || k === 0 || k === TOP || k === TOP + 1 ? `e$
 /* ───────────── Motor ───────────── */
 
 const st = {
-  el: null, edificio: null, torre: null, cabina: null, contrapeso: null, sky: null, far: null, near: null, hud: null,
-  H: 600, cy: 600, f: -0.38, tween: null, pagina: '__portal', idx: 0, activa: null,
-  mx: 0, my: 0, mxs: 0, mys: 0, asomo: 0, asomoS: 0, raf: 0, tPrev: 0, escala: 1,
-  pool: new Map(), libres: [], hudK: null,
+  el: null, edificio: null, torre: null, cabina: null, contrapeso: null, sky: null, far: null, near: null, estelas: null, hud: null,
+  H: 600, cy: 600, f: -0.38, fPrev: -0.38, vel: 0, tween: null, pagina: '__portal', idx: 0, nombre: '', activa: null,
+  mx: 0, my: 0, mxs: 0, mys: 0, asomo: 0, asomoS: 0, empuje: 0, raf: 0, tPrev: 0, escala: 1, alto: '',
+  pool: new Map(), libres: [], tQuieto: 0,
 };
 const reducido = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const movil = () => innerWidth < 900;
 
 export function iniciarEscena() {
   const el = document.getElementById('escena');
@@ -258,15 +290,17 @@ export function iniciarEscena() {
       <linearGradient id="g-beam" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--sc-glow)" stop-opacity="0.5"/><stop offset="1" stop-color="var(--sc-glow)" stop-opacity="0"/></linearGradient>
     </defs></svg>
     <div class="sky"></div><div class="skyline far"></div><div class="skyline near"></div>
-    <div class="edificio"></div>
+    <div class="edificio"></div><div class="estelas"></div>
     <div class="torre"><div class="torre-estructura"></div><div class="contrapeso"></div>
       <div class="cabina"><div class="cabina-luz"></div><div class="persona"></div><div class="puerta pi"></div><div class="puerta pd"></div></div></div>`;
   st.edificio = el.querySelector('.edificio');
   st.torre = el.querySelector('.torre-estructura');
+  st.cabina = el.querySelector('.cabina');
   st.contrapeso = el.querySelector('.contrapeso');
   st.sky = el.querySelector('.sky');
   st.far = el.querySelector('.skyline.far');
   st.near = el.querySelector('.skyline.near');
+  st.estelas = el.querySelector('.estelas');
   st.hud = document.getElementById('hud');
   prepararHud();
   medir();
@@ -278,54 +312,86 @@ export function iniciarEscena() {
     st.my = e.clientY / innerHeight - 0.5;
     despertar();
   }, { passive: true });
+  // En los extremos de la página (o si no hay scroll), la rueda empuja el edificio con efecto muelle.
+  addEventListener('wheel', (e) => {
+    if (st.tween) { acelerar(); return; }
+    const max = document.documentElement.scrollHeight - innerHeight;
+    const arriba = scrollY <= 0 && e.deltaY < 0;
+    const abajo = scrollY >= max - 1 && e.deltaY > 0;
+    if (max <= 4 || arriba || abajo) {
+      st.empuje = Math.max(-0.45, Math.min(0.45, st.empuje - Math.sign(e.deltaY) * 0.1));
+      despertar();
+    }
+  }, { passive: true });
+  // Cualquier interacción durante el viaje lo acorta: nunca se espera al ascensor.
+  for (const ev of ['pointerdown', 'keydown', 'touchstart']) addEventListener(ev, () => { if (st.tween) acelerar(); }, { passive: true, capture: true });
   despertar();
 }
 
 function medir() {
-  // Planta algo más baja que la pantalla: se ven la planta actual y parte de las vecinas.
   st.H = Math.round(Math.min(720, Math.max(380, innerHeight * 0.62)));
   st.cy = Math.round((innerHeight + st.H) / 2);
   document.documentElement.style.setProperty('--planta-h', `${st.H}px`);
   document.documentElement.style.setProperty('--suelo-y', `${st.cy}px`);
 }
 
-/** Planta (fracción) según la página y el scroll: se baja una planta cada ~1,6 alturas de planta. */
+/** Planta (fracción) según la página y el scroll: el scroll recorre las alturas de la planta de la sección. */
 function plantaScroll() {
   const base = plantaDe(st.pagina, st.idx);
   if (st.pagina === '__portal') return base;
-  return Math.max(-0.38, base - scrollY / (st.H * 1.6));
+  const max = document.documentElement.scrollHeight - innerHeight;
+  const recorrido = Math.min(base - sueloDe(st.pagina), Math.max(0, max / (innerHeight * 0.55)));
+  const p = max > 4 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+  return base - p * recorrido;
 }
 
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeSine = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
 
 /**
- * Cambio de página: el ascensor viaja hasta la planta de la página.
- * Devuelve una promesa que se resuelve al llegar (con las puertas abriéndose).
+ * Cambio de página: el ascensor viaja hasta la planta de la página (0,45–0,72 s).
+ * Devuelve { casi, fin }: `casi` se resuelve al empezar a frenar (60 %), para ir mostrando el
+ * contenido mientras la cabina llega; `fin`, al abrir las puertas.
  */
-export function irAPlanta(pagina, { idx = 0, instantaneo = false, desde = null } = {}) {
+export function irAPlanta(pagina, { idx = 0, instantaneo = false, desde = null, nombre = '' } = {}) {
   const misma = pagina === st.pagina && idx === st.idx;
   st.pagina = pagina;
   st.idx = idx;
+  st.nombre = nombre;
+  st.empuje = 0;
   if (desde != null && !reducido()) { st.f = desde; st.activa = null; }
   actualizarHud();
-  if (misma && st.tween) return st.tween.promesa;
+  if (misma && st.tween) return { casi: st.tween.casi, fin: st.tween.fin };
   const destino = plantaDe(pagina, idx);
   const dist = Math.abs(destino - st.f);
   if (instantaneo || reducido() || dist < 0.05) {
     if (instantaneo || reducido()) st.f = plantaScroll();
+    if (st.tween) { st.tween.rCasi(); st.tween.rFin(); }
     st.tween = null;
     despertar();
-    return Promise.resolve();
+    return { casi: Promise.resolve(), fin: Promise.resolve() };
   }
-  if (st.tween) st.tween.resolver();
-  let resolver;
-  const promesa = new Promise((r) => { resolver = r; });
-  st.tween = { from: st.f, t0: performance.now(), dur: Math.min(1250, 650 + dist * 22), dist, promesa, resolver, sube: destino > st.f };
+  if (st.tween) { st.tween.rCasi(); st.tween.rFin(); }
+  const tw = { from: st.f, t0: performance.now(), dur: Math.max(450, Math.min(720, 420 + dist * 14)), dist, sube: destino > st.f, casiHecho: false };
+  tw.casi = new Promise((r) => { tw.rCasi = r; });
+  tw.fin = new Promise((r) => { tw.rFin = r; });
+  st.tween = tw;
   st.el.classList.add('viajando');
-  st.el.classList.toggle('subiendo', destino > st.f);
+  st.el.classList.toggle('subiendo', tw.sube);
   st.el.classList.remove('llegada');
   despertar();
-  return promesa;
+  return { casi: tw.casi, fin: tw.fin };
+}
+
+/** Acorta el viaje en curso para que termine en ~0,15 s. */
+export function acelerar() {
+  const tw = st.tween;
+  if (!tw) return;
+  const ahora = performance.now();
+  const t = (ahora - tw.t0) / tw.dur;
+  if (t > 0.8) return;
+  // Reescala el tiempo restante manteniendo la posición actual.
+  tw.from = st.f; tw.t0 = ahora; tw.dur = 160; tw.dist = Math.abs(plantaScroll() - st.f); tw.corto = true;
 }
 
 /** Al pasar el ratón por el menú, el edificio se asoma hacia la planta de destino. */
@@ -339,62 +405,81 @@ export function asomar(pagina, idx = 0) {
 }
 
 function despertar() {
+  if (st.el?.classList.contains('quieto')) st.el.classList.remove('quieto');
+  clearTimeout(st.tQuieto);
   if (!st.raf && st.el) { st.tPrev = performance.now(); st.raf = requestAnimationFrame(tick); }
 }
 
 function tick(now) {
-  const dt = Math.min(64, now - st.tPrev);
+  const dt = Math.max(1, Math.min(64, now - st.tPrev));
   st.tPrev = now;
   const suave = (tau) => (reducido() ? 1 : 1 - Math.exp(-dt / tau));
   let quieto = true;
+  let fCab = null;
   if (st.tween) {
     const tw = st.tween;
     const t = Math.min(1, (now - tw.t0) / tw.dur);
     const to = plantaScroll();
     const signo = Math.sign(to - tw.from) || 1;
     // Rebote al llegar: pasa un poco de la planta y vuelve, como una cabina que frena.
-    const ov = Math.min(0.12, tw.dist * 0.03);
-    const rebote = t > 0.72 ? Math.sin(Math.PI * ((t - 0.72) / 0.28)) * ov : 0;
+    const ov = tw.corto ? 0 : Math.min(0.1, tw.dist * 0.025);
+    const rebote = t > 0.74 ? Math.sin(Math.PI * ((t - 0.74) / 0.26)) * ov : 0;
     st.f = tw.from + (to - tw.from) * easeInOut(t) + signo * rebote;
-    st.escala = 1 - 0.065 * Math.sin(Math.PI * t) * Math.min(1, tw.dist / 3);
+    fCab = tw.from + (to - tw.from) * easeSine(t); // la cabina se adelanta a la cámara
+    const intensidad = Math.sin(Math.PI * t) * Math.min(1, tw.dist / 3);
+    st.escala = 1 - (movil() ? 0.16 : 0.07) * intensidad;
     quieto = false;
+    if (t >= 0.6 && !tw.casiHecho) { tw.casiHecho = true; tw.rCasi(); }
     if (t >= 1) {
       st.tween = null;
       st.escala = 1;
       st.el.classList.remove('viajando', 'subiendo');
       st.el.classList.add('llegada');
       setTimeout(() => st.el.classList.remove('llegada'), 1200);
-      tw.resolver();
+      tw.rCasi(); tw.rFin();
       actualizarHud();
     }
   } else {
-    const obj = plantaScroll() + st.asomoS;
+    const obj = plantaScroll() + st.asomoS + st.empuje;
     const nf = st.f + (obj - st.f) * suave(120);
     if (Math.abs(obj - nf) > 0.0004) quieto = false;
     st.f = Math.abs(obj - nf) <= 0.0004 ? obj : nf;
   }
+  st.vel = (st.vel * 0.7) + (Math.abs(st.f - st.fPrev) / dt * 1000) * 0.3; // plantas por segundo
+  st.fPrev = st.f;
+  st.empuje *= 1 - suave(260);
+  if (Math.abs(st.empuje) < 0.002) st.empuje = 0; else quieto = false;
   st.asomoS += (st.asomo - st.asomoS) * suave(160);
   st.mxs += (st.mx - st.mxs) * suave(220);
   st.mys += (st.my - st.mys) * suave(220);
-  if (Math.abs(st.asomo - st.asomoS) > 0.001 || Math.abs(st.mx - st.mxs) > 0.001 || Math.abs(st.my - st.mys) > 0.001) quieto = false;
-  pintar();
-  st.raf = quieto ? 0 : requestAnimationFrame(tick);
+  if (Math.abs(st.asomo - st.asomoS) > 0.001 || Math.abs(st.mx - st.mxs) > 0.001 || Math.abs(st.my - st.mys) > 0.001 || st.vel > 0.05) quieto = false;
+  pintar(fCab);
+  if (quieto) {
+    st.raf = 0;
+    // Parado: se pausan también las animaciones CSS de la escena para no gastar batería.
+    clearTimeout(st.tQuieto);
+    st.tQuieto = setTimeout(() => st.el.classList.add('quieto'), 2500);
+  } else st.raf = requestAnimationFrame(tick);
 }
 
-function pintar() {
+function pintar(fCab) {
   const { H, cy, f } = st;
   const tx = st.mxs * -16;
   const tyRaton = st.mys * -10;
-  st.edificio.style.transform = `translate3d(${tx.toFixed(1)}px, ${tyRaton.toFixed(1)}px, 0) scale(${st.escala.toFixed(4)})`;
+  const estira = 1 + Math.min(0.035, st.vel * 0.0016); // ligero estirón a máxima velocidad
+  st.edificio.style.transform = `translate3d(${tx.toFixed(1)}px, ${tyRaton.toFixed(1)}px, 0) scale(${st.escala.toFixed(4)}, ${(st.escala * estira).toFixed(4)})`;
+  const op = Math.max(0, Math.min(0.6, (st.vel - 5) / 25));
+  st.estelas.style.opacity = op.toFixed(2);
 
-  // Plantas visibles (virtualizadas)
-  const kmin = Math.max(-1, Math.floor(f - (innerHeight - cy) / H) - 1);
-  const kmax = Math.min(TOP + 1, Math.ceil(f + cy / H));
+  // Plantas visibles (virtualizadas). Durante el viaje se alejan, así que se ven más.
+  const margen = st.escala < 0.97 ? 2 : 1;
+  const kmin = Math.max(-1, Math.floor(f - (innerHeight - cy) / H) - margen);
+  const kmax = Math.min(TOP + 1, Math.ceil(f + cy / H) + margen - 1);
   for (const [k, el] of st.pool) if (k < kmin || k > kmax) { st.pool.delete(k); el.style.visibility = 'hidden'; st.libres.push(el); }
   for (let k = kmin; k <= kmax; k++) {
     let el = st.pool.get(k);
     if (!el) {
-      // Las plantas comparten 5 distribuciones: se reutiliza un elemento con la misma y solo cambia el número.
+      // Las plantas comparten 5 distribuciones: se reutiliza un elemento con la misma y solo cambian los rótulos.
       const v = variante(k);
       const i = st.libres.findIndex((x) => x._var === v);
       el = i >= 0 ? st.libres.splice(i, 1)[0] : st.libres.pop() || st.edificio.appendChild(document.createElement('div'));
@@ -405,9 +490,12 @@ function pintar() {
         el._fg = el.querySelector('.ly.fg');
         el._num = el.querySelector('.planta-num');
         el._numTxt = el.querySelector('.planta-num span');
+        el._rot = el.querySelector('.planta-num small');
+        el._niebla = el.querySelector('.niebla');
       }
       if (el._numTxt) el._numTxt.textContent = etiquetaPlanta(k);
-      el.className = `planta${k === 0 ? ' bajo' : ''}${k === TOP ? ' atico' : ''}${k === TOP + 1 ? ' azotea' : ''}${k === -1 ? ' calle' : ''}${(k * 7) % 5 < 2 ? ' lit' : ''}`;
+      if (el._rot) el._rot.textContent = rotuloPared(k);
+      el.className = `planta${k === 0 ? ' bajo' : ''}${k === TOP ? ' atico' : ''}${k === TOP + 1 ? ' azotea' : ''}${k === -1 ? ' calle' : ''}${(k * 7) % 5 < 2 ? ' lit' : ''} t${k % 3}`;
       el.style.visibility = '';
       st.pool.set(k, el);
     }
@@ -417,6 +505,7 @@ function pintar() {
     if (el._bk) el._bk.style.transform = `translate3d(0, ${(d * H * 0.12).toFixed(1)}px, 0)`;
     if (el._fg) el._fg.style.transform = `translate3d(${(st.mxs * -14).toFixed(1)}px, ${(d * H * -0.09).toFixed(1)}px, 0)`;
     if (el._num) el._num.style.transform = `translate3d(0, ${(d * H * 0.3).toFixed(1)}px, 0)`;
+    if (el._niebla) el._niebla.style.opacity = Math.max(0, Math.min(0.55, Math.abs(d) * 0.5 - 0.12)).toFixed(2);
   }
   const activa = Math.max(-1, Math.min(TOP + 1, Math.round(f)));
   if (activa !== st.activa) {
@@ -427,9 +516,11 @@ function pintar() {
     for (const [k, el] of st.pool) if (k === activa && !el.classList.contains('on')) el.classList.add('on');
   }
 
-  // Torre del ascensor (fuera del edificio) y contrapeso que se mueve al revés
+  // Torre del ascensor: la estructura se desplaza con el edificio; la cabina se adelanta en los viajes.
   const off = ((f * H) % H + H) % H;
   st.torre.style.transform = `translate3d(0, ${(off - H).toFixed(1)}px, 0)`;
+  const adelanto = fCab == null ? 0 : Math.max(-0.32, Math.min(0.32, fCab - f)) * H;
+  st.cabina.style.transform = `translate3d(0, ${(-adelanto).toFixed(1)}px, 0)`;
   const cp = ((f * H * 0.9) % (innerHeight + 240) + innerHeight + 240) % (innerHeight + 240) - 120;
   st.contrapeso.style.transform = `translate3d(0, ${cp.toFixed(1)}px, 0)`;
 
@@ -456,7 +547,8 @@ function actualizarHud() {
   const k = Math.max(0, Math.min(TOP, st.activa ?? Math.round(st.f)));
   const odo = hud.querySelector('.odo');
   if (odo) odo.style.transform = `translateY(${-k * 1.25}em)`;
-  hud.querySelector('.hud-nom').textContent = NOMBRE_PAGINA[st.pagina] || '';
+  const nom = st.nombre || (st.pagina === '__portal' ? 'Portal' : st.pagina === 'piso' ? 'Ficha del piso' : nombreSeccion(st.pagina));
+  hud.querySelector('.hud-nom').textContent = nom;
   hud.querySelector('.hud-planta').textContent = nombrePlanta(k);
   hud.dataset.dir = st.tween ? (st.tween.sube ? 'up' : 'down') : '';
 }

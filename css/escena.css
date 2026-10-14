@@ -371,3 +371,51 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
 .tip ol { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13.5px; display: grid; gap: 2px; }
 @keyframes flotar { 50% { transform: translateY(-4px); } }
 @media (max-width: 640px) { .tip { grid-template-columns: 1fr; } .tip-ic { display: none; } }
+
+/* ───────────── Ronda 2 de diseño ───────────── */
+.ly.bk > svg, .ly.fg, .planta-num, .niebla, .cabina, .estelas { will-change: transform, opacity; }
+.niebla { position: absolute; inset: 0; background: linear-gradient(180deg, var(--sky-mid), var(--sky-lo)); opacity: 0; pointer-events: none; }
+.estelas {
+  position: absolute; top: 0; bottom: 0; left: var(--b-left); right: var(--gutter); opacity: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 46px, color-mix(in srgb, var(--sc-ln) 70%, transparent) 46px 47px, transparent 47px 120px, color-mix(in srgb, var(--sc-thin) 100%, transparent) 120px 121px, transparent 121px 173px);
+  -webkit-mask: linear-gradient(180deg, transparent, #000 25%, #000 75%, transparent); mask: linear-gradient(180deg, transparent, #000 25%, #000 75%, transparent);
+}
+/* Escena en reposo: se pausa todo para no gastar batería */
+#escena.quieto *, #escena.quieto *::before, #escena.quieto *::after { animation-play-state: paused !important; }
+/* Rótulo de la sección en la pared, bajo el número */
+.planta-num small { display: block; margin-top: 12px; padding-left: 8px; font: 650 12px var(--font); letter-spacing: 0.22em; text-transform: uppercase; color: var(--sc-num); transition: color 0.8s; }
+.planta.on .planta-num small { color: var(--sc-num-on); }
+/* Variedad de colores por planta */
+.planta.t1 .backwall { fill: color-mix(in srgb, var(--sc-backwall) 90%, #c9b79c); }
+.planta.t2 .backwall { fill: color-mix(in srgb, var(--sc-backwall) 92%, #a9bdb4); }
+.vecino { opacity: 0.9; }
+/* Cuentakilómetros sincronizado con el rótulo */
+.odo { transition-duration: 0.16s; }
+/* El indicador abre el directorio del ascensor */
+.hud { pointer-events: auto; cursor: pointer; font: inherit; text-align: left; }
+.hud:hover { border-color: var(--accent); }
+.hud:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Torre del ascensor en móvil: una franja estrecha en el borde derecho */
+@media (max-width: 1179px) {
+  .torre { display: block; width: 12px; right: 2px; }
+  .torre-estructura { border-width: 1px; background: repeating-linear-gradient(180deg, var(--sc-ln) 0 2px, transparent 2px var(--planta-h)), var(--sc-glass); background-position: 0 calc(var(--planta-h) * 0.96), 0 0; }
+  .cabina { width: 12px; height: 22px; margin-left: -6px; border-radius: 3px; top: calc(var(--suelo-y, 70%) - var(--planta-h) * 0.04 - 22px); }
+  .cabina .persona, .cabina .puerta, .contrapeso { display: none; }
+  .cabina-luz { inset: 3px 2px auto; height: 2px; }
+}
+@media (prefers-color-scheme: dark) {
+  :root { --muted: #9aa2ab; --sc-glass: rgba(80, 120, 170, 0.32); }
+  .torre-estructura { border-color: rgba(190, 205, 225, 0.4); }
+}
+@media (max-width: 899px) { :root { --glass: color-mix(in srgb, var(--surface) 84%, transparent); } .tip { padding-bottom: 76px; } }
+
+/* Directorio del ascensor */
+.ascensor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.boton-planta {
+  display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2);
+  cursor: pointer; text-align: left; font: inherit; color: inherit; transition: transform 0.3s var(--spring), border-color 0.2s;
+}
+.boton-planta:hover { transform: translateY(-2px); border-color: var(--accent); }
+.boton-planta b { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--line-2); font: 700 16px ui-monospace, Menlo, monospace; color: var(--ink-2); flex-shrink: 0; transition: all 0.3s; }
+.boton-planta.on b { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); }
+.boton-planta small { display: block; color: var(--muted); font-size: 12px; }
