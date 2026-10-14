@@ -295,7 +295,7 @@ body:not([data-ruta]) .hud { display: none; }
 .seg-pill { position: absolute; z-index: -1; top: 3px; bottom: 3px; border-radius: 7px; background: var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); transition: left 0.45s var(--spring), width 0.35s var(--ease); }
 
 /* ───────────── Cambio de página: salir → viajar (escena a la vista) → llegar ───────────── */
-#main.saliendo > * { animation: salir 0.12s var(--ease) forwards; }
+#main.saliendo > * { animation: salir 0.08s var(--ease) forwards; }
 #main[data-dir="up"].saliendo > * { animation-name: salirArriba; }
 #main.en-viaje { opacity: 0; pointer-events: none; }
 @keyframes salir { to { opacity: 0; transform: translateY(-30px) scale(0.985); } }
@@ -463,3 +463,22 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
   html.escena-mov { --glass: color-mix(in srgb, var(--surface) 62%, transparent); --glass-strong: color-mix(in srgb, var(--surface) 80%, transparent); }
 }
 .glow, .beam { will-change: opacity; }
+
+/* ───────────── Ronda 5 de diseño ───────────── */
+:root { --muted: #5d646d; }
+@media (prefers-color-scheme: dark) { :root { --muted: #9aa2ab; } }
+@media (max-width: 899px) {
+  :root { --glass: color-mix(in srgb, var(--surface) 84%, transparent); }
+  html.escena-mov { --glass: color-mix(in srgb, var(--surface) 70%, transparent); --glass-strong: color-mix(in srgb, var(--surface) 82%, transparent); }
+  /* Ventana al edificio: una franja entre la barra superior y la cabecera de la página */
+  main { padding-top: calc(52px + 92px + env(safe-area-inset-top)); }
+  .planta-num { top: 2%; }
+  .planta-num span { font-size: 84px; }
+  .planta-num small { padding: 8px 12px 10px 8px; margin-top: 4px; }
+  /* El botón + se esconde al bajar para no tapar datos y vuelve al subir */
+  .fab { transition: transform 0.35s var(--spring), opacity 0.25s; }
+  html.fab-oculto .fab { transform: translateY(140%) scale(0.8); opacity: 0; pointer-events: none; }
+}
+
+/* Móvil: sin botón flotante; el panel tiene accesos rápidos y cada página su botón de alta */
+@media (max-width: 899px) { .fab { display: none !important; } .tip { padding-right: 18px; } }

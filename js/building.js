@@ -8,15 +8,22 @@
 // Todo es decorativo (aria-hidden, sin eventos de puntero) y de bajo contraste.
 
 export const SECCIONES = [
-  ['ajustes', 'Ajustes', 4], ['fiscal', 'Fiscal', 4], ['pisos', 'Pisos', 8], ['calendario', 'Calendario', 4],
+  ['ajustes', 'Ajustes', 4], ['fiscal', 'Fiscal', 4], ['pisos', 'Pisos', 4], ['calendario', 'Calendario', 4],
   ['gastos', 'Gastos', 4], ['cobros', 'Cobros', 4], ['', 'Panel', 4],
 ]; // de abajo (1) a arriba (7); el tercer valor es el número de alturas de la planta
-// Pisos tiene 8 alturas: A es el listado y B…H las fichas de cada piso (una por piso).
+// La planta de Pisos crece con la cartera: A–C para el listado y dos alturas por cada ficha de piso.
 const INICIO = [];
-{ let k = 1; for (const [, , n] of SECCIONES) { INICIO.push(k); k += n; } }
-export const TOP = INICIO[INICIO.length - 1] + SECCIONES[SECCIONES.length - 1][2]; // ático; 0 = bajo; TOP + 1 = azotea; -1 = calle
+export let TOP = 0; // ático; 0 = bajo; TOP + 1 = azotea; -1 = calle
+function recalcular() {
+  INICIO.length = 0;
+  let k = 1;
+  for (const [, , n] of SECCIONES) { INICIO.push(k); k += n; }
+  TOP = k;
+}
+recalcular();
 const S_DE = Object.fromEntries(SECCIONES.map(([k], s) => [k, s]));
-const LETRAS = 'ABCDEFGH';
+const LETRAS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const letra = (h) => (h < LETRAS.length ? LETRAS[h] : `${LETRAS[LETRAS.length - 1]}${h - LETRAS.length + 2}`);
 
 function seccionDe(k) {
   if (k < 1 || k >= TOP) return null;
@@ -29,19 +36,30 @@ export const numeroSeccion = (pagina) => (S_DE[pagina] ?? 6) + 1;
 export const nombreSeccion = (pagina) => SECCIONES[S_DE[pagina] ?? 6][1];
 const kDe = (s, h) => INICIO[s] + SECCIONES[s][2] - 1 - h; // planta k de la sección s y altura h
 
-/**
- * Planta de entrada de una ruta. Las fichas de piso viven en la planta de Pisos, una altura por piso
- * (3B, 3C…); la ficha del calendario de un turístico, en la altura B de Calendario.
- */
-let totalPisos = 7;
 let idsPisos = [];
-/** La app indica los pisos para dar una altura a cada ficha y hacer clicables sus plantas. */
-export function definirPisos(ids) { idsPisos = ids; totalPisos = Math.max(7, ids.length); cache.clear(); }
+const LISTADO = 3; // alturas A–C del listado de pisos
+/** La app indica los pisos: cada ficha recibe dos alturas propias en la planta de Pisos (p. ej. 3D–3E). */
+export function definirPisos(ids) {
+  idsPisos = ids;
+  SECCIONES[S_DE.pisos][2] = LISTADO + 2 * Math.max(1, ids.length);
+  recalcular();
+  cache.clear();
+  for (const el of st.pool.values()) { el.style.visibility = 'hidden'; el._var = null; st.libres.push(el); }
+  st.pool.clear();
+  st.activa = null;
+  st.luces = null;
+  prepararHud();
+  despertar();
+}
+const alturaFicha = (idx) => LISTADO + 2 * Math.max(0, idx);
 
+/**
+ * Planta de entrada de una ruta. Cada ficha de piso tiene dos alturas en la planta de Pisos; la ficha
+ * del calendario de un turístico, la altura B de Calendario.
+ */
 export function plantaDe(pagina, idx = 0) {
   if (pagina === '__portal') return -0.38;
-  // Una altura por piso (3B…3H); con más de 7 pisos se reparten en alturas intermedias, sin repetirse.
-  if (pagina === 'piso') return kDe(S_DE.pisos, 1 + Math.max(0, idx) * (6 / (totalPisos - 1)));
+  if (pagina === 'piso') return kDe(S_DE.pisos, alturaFicha(idx));
   if (pagina === 'calendario' && idx > 0) return kDe(S_DE.calendario, 1);
   return kDe(S_DE[pagina] ?? 6, 0);
 }
@@ -49,11 +67,23 @@ export function plantaDe(pagina, idx = 0) {
 function sueloDe(pagina, idx) {
   if (pagina === '__portal') return -0.38;
   const s = S_DE[pagina === 'piso' ? 'pisos' : pagina] ?? 6;
-  // En Pisos el scroll del listado recorre 3 alturas; cada ficha baja como mucho una altura.
-  if (pagina === 'pisos') return kDe(s, 3);
-  if (pagina === 'piso') return plantaDe(pagina, idx) - 0.42; // sin llegar a la altura del piso siguiente
+  if (pagina === 'pisos') return kDe(s, LISTADO - 1); // el listado recorre A–C
+  if (pagina === 'piso') return plantaDe(pagina, idx) - 1; // cada ficha baja a su segunda altura
   if (pagina === 'calendario' && idx > 0) return plantaDe(pagina, idx) - 2;
   return INICIO[s];
+}
+/** Para hacer clicable un número de planta: a qué ruta lleva y a qué fracción del scroll. */
+function destinoDePlanta(k) {
+  if (k <= 0) return { ir: 'ajustes', frac: 1 };
+  if (k >= TOP) return { ir: '', frac: 0 };
+  const s = seccionDe(k);
+  const h = altura(k);
+  if (s === S_DE.pisos && h >= LISTADO) {
+    const idx = Math.floor((h - LISTADO) / 2);
+    if (idsPisos[idx]) return { ir: `piso/${encodeURIComponent(idsPisos[idx])}`, frac: (h - LISTADO) % 2 };
+  }
+  if (s === S_DE.pisos) return { ir: 'pisos', frac: h / (LISTADO - 1) };
+  return { ir: SECCIONES[s][0], frac: h / (SECCIONES[s][2] - 1) };
 }
 /** Sección (clave de ruta) a la que pertenece la planta k, para hacerla clicable. */
 export const paginaDePlanta = (k) => (k <= 0 ? 'ajustes' : k >= TOP ? '' : SECCIONES[seccionDe(k)][0]);
@@ -61,7 +91,7 @@ export const paginaDePlanta = (k) => (k <= 0 ? 'ajustes' : k >= TOP ? '' : SECCI
 export function etiquetaPlanta(k) {
   if (k <= 0) return 'B';
   if (k >= TOP) return 'Á';
-  return `${seccionDe(k) + 1}${LETRAS[altura(k)]}`;
+  return `${seccionDe(k) + 1}${letra(altura(k))}`;
 }
 export function nombrePlanta(k) {
   if (k <= 0) return 'Portal';
@@ -350,7 +380,9 @@ export function iniciarEscena() {
     const arriba = scrollY <= 0 && e.deltaY < 0;
     const abajo = scrollY >= max - 1 && e.deltaY > 0;
     if (max <= 4 || arriba || abajo) {
-      st.empuje = Math.max(-0.55, Math.min(0.55, st.empuje - Math.sign(e.deltaY) * 0.18));
+      // Sin scroll, la rueda asoma a la altura siguiente de verdad (el indicador cambia).
+      const tope = max <= 4 ? 0.75 : 0.55;
+      st.empuje = Math.max(-tope, Math.min(tope, st.empuje - Math.sign(e.deltaY) * 0.2));
       despertar();
     }
   }, { passive: true });
@@ -361,7 +393,8 @@ export function iniciarEscena() {
 
 function medir() {
   st.H = Math.round(Math.min(720, Math.max(380, innerHeight * 0.62)));
-  st.cy = Math.round((innerHeight + st.H) / 2);
+  // En móvil, el techo de la planta queda justo bajo la barra superior: su número asoma en la franja.
+  st.cy = movil() ? Math.min(innerHeight, 50 + st.H) : Math.round((innerHeight + st.H) / 2);
   document.documentElement.style.setProperty('--planta-h', `${st.H}px`);
   document.documentElement.style.setProperty('--suelo-y', `${st.cy}px`);
 }
@@ -463,7 +496,7 @@ function tick(now) {
     st.escala = 1 - (movil() ? 0.16 + Math.min(0.3, tw.dist * 0.012) : 0.07 + Math.min(0.33, tw.dist * 0.014)) * intensidad;
     st.dirViaje = signo;
     quieto = false;
-    if (t >= 0.4 && !tw.casiHecho) { tw.casiHecho = true; tw.rCasi(); }
+    if (t >= 0.3 && !tw.casiHecho) { tw.casiHecho = true; tw.rCasi(); }
     if (t >= 1) {
       st.tween = null;
       st.escala = 1;
@@ -480,8 +513,8 @@ function tick(now) {
     st.f = Math.abs(obj - nf) <= 0.0004 ? obj : nf;
   }
   st.vel = (st.vel * 0.7) + (Math.abs(st.f - st.fPrev) / dt * 1000) * 0.3; // plantas por segundo
-  // Mientras el edificio se mueve, el cristal de las tarjetas se aclara para dejarlo ver (móvil).
-  const mov = st.vel > (st.movClase ? 0.15 : 0.6);
+  // Durante el viaje (antes de que vuelva el contenido) el cristal se aclara para dejar ver el edificio.
+  const mov = !!st.tween && (now - st.tween.t0) / st.tween.dur < 0.3;
   if (mov !== st.movClase) { document.documentElement.classList.toggle('escena-mov', mov); st.movClase = mov; }
   st.fPrev = st.f;
   st.empuje *= 1 - suave(260);
@@ -497,6 +530,14 @@ function tick(now) {
     clearTimeout(st.tQuieto);
     st.tQuieto = setTimeout(() => st.el.classList.add('quieto'), 2500);
   } else st.raf = requestAnimationFrame(tick);
+}
+
+/** Escribe un estilo solo si cambia (evita recálculos de estilo innecesarios en cada fotograma). */
+function poner(el, prop, v) {
+  const k = `_${prop}`;
+  if (el[k] === v) return;
+  el[k] = v;
+  el.style[prop] = v;
 }
 
 function pintar(fCab) {
@@ -533,13 +574,11 @@ function pintar(fCab) {
       }
       if (el._numTxt) el._numTxt.textContent = etiquetaPlanta(k);
       if (el._num) {
-        // En la planta de Pisos, cada altura B… abre la ficha de su piso.
-        const s = seccionDe(k);
-        const h = s === S_DE.pisos ? altura(k) : 0;
-        const idx = h >= 1 ? Math.round((h - 1) * ((totalPisos - 1) / 6)) : -1;
+        const d = destinoDePlanta(k);
         el._num.dataset.action = 'ir-planta';
-        el._num.dataset.ir = idx >= 0 && idsPisos[idx] ? `piso/${encodeURIComponent(idsPisos[idx])}` : paginaDePlanta(k);
-        el._num.title = idx >= 0 && idsPisos[idx] ? 'Abrir la ficha de este piso' : `Ir a ${rotuloPared(k)}`;
+        el._num.dataset.ir = d.ir;
+        el._num.dataset.frac = String(d.frac);
+        el._num.title = d.ir.startsWith('piso/') ? 'Abrir la ficha de este piso' : `Ir a ${rotuloPared(k)}`;
       }
       if (el._rot) el._rot.textContent = rotuloPared(k);
       if (st.tween) st.luces = null;
@@ -548,12 +587,15 @@ function pintar(fCab) {
       st.pool.set(k, el);
     }
     const bottom = cy + (f - k) * H;
-    el.style.transform = `translate3d(0, ${(bottom - H).toFixed(1)}px, 0)`;
+    poner(el, 'transform', `translate3d(0, ${(bottom - H).toFixed(0)}px, 0)`);
     const d = k - f; // >0 planta por encima de la cámara
-    if (el._bk) el._bk.style.transform = `translate3d(0, ${(d * H * 0.12).toFixed(1)}px, 0)`;
-    if (el._fg) el._fg.style.transform = `translate3d(${(st.mxs * -14).toFixed(1)}px, ${(d * H * -0.09).toFixed(1)}px, 0)`;
-    if (el._num) el._num.style.transform = `translate3d(0, ${(d * H * 0.3).toFixed(1)}px, 0)`;
-    if (el._niebla) el._niebla.style.opacity = Math.max(0, Math.min(0.55, Math.abs(d) * 0.5 - 0.12)).toFixed(2);
+    // Paralaje solo en las plantas cercanas, con valores redondeados para no reescribir estilos sin cambios.
+    if (Math.abs(d) < 1.6) {
+      if (el._bk) poner(el._bk, 'transform', `translate3d(0, ${(d * H * 0.12).toFixed(0)}px, 0)`);
+      if (el._fg) poner(el._fg, 'transform', `translate3d(${(st.mxs * -14).toFixed(0)}px, ${(d * H * -0.09).toFixed(0)}px, 0)`);
+      if (el._num) poner(el._num, 'transform', `translate3d(0, ${(d * H * 0.3).toFixed(0)}px, 0)`);
+    }
+    if (el._niebla) poner(el._niebla, 'opacity', Math.max(0, Math.min(0.55, Math.abs(d) * 0.5 - 0.12)).toFixed(2));
   }
   const activa = Math.max(-1, Math.min(TOP + 1, Math.round(f)));
   if (activa !== st.activa) { st.activa = activa; actualizarHud(); }

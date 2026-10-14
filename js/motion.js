@@ -11,7 +11,7 @@ function observar() {
     // Escalonado de arriba abajo según el orden en la página.
     const base = Math.min(...visibles.map((e) => Number(e.target.dataset.rvi) || 0));
     visibles.forEach((e) => {
-      e.target.style.setProperty('--d', `${Math.min((Number(e.target.dataset.rvi) || 0) - base, 8) * 70}ms`);
+      e.target.style.setProperty('--d', `${Math.min((Number(e.target.dataset.rvi) || 0) - base, 5) * 50}ms`);
       e.target.classList.add('in');
       observador.unobserve(e.target);
       if (e.target.matches('.kpi')) contar(e.target);

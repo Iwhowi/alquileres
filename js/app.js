@@ -109,7 +109,7 @@ app.render = render;
 /** Muestra la página en cuanto la cabina empieza a frenar (o a los 0,6 s, por si acaso). */
 function llegar(main, viaje) {
   const id = ++navId;
-  Promise.race([viaje.casi, new Promise((r) => setTimeout(r, 400))]).then(() => {
+  Promise.race([viaje.casi, new Promise((r) => setTimeout(r, 250))]).then(() => {
     if (id !== navId) return;
     main.classList.remove('en-viaje');
     entrar(main);
@@ -198,7 +198,16 @@ const acciones = {
     render();
   },
   'toggle-extra': (el) => { app.ui.incluirExtra = el.checked; render(); },
-  'ir-planta': (el) => { if (app.s) location.hash = `#/${el.dataset.ir}`; },
+  'ir-planta': (el) => {
+    if (!app.s) return;
+    const r = ruta();
+    const actual = r.id ? `${r.seccion}/${encodeURIComponent(r.id)}` : r.seccion;
+    if (el.dataset.ir === actual || el.dataset.ir === r.seccion && !r.id) {
+      // Número de la sección actual: baja (o sube) hasta esa altura de la página.
+      const max = document.documentElement.scrollHeight - innerHeight;
+      window.scrollTo({ top: max * Number(el.dataset.frac || 0), behavior: 'smooth' });
+    } else location.hash = `#/${el.dataset.ir}`;
+  },
   ascensor: () => {
     if (!app.s) return;
     const actual = destino(ruta().seccion, ruta().id).pagina;
@@ -518,7 +527,7 @@ function navegar() {
     if (miId !== navId) return;
     render({ oculto: true });
     llegar(main, viaje);
-  }, enCurso ? 0 : 120);
+  }, enCurso ? 0 : 60);
 }
 
 // Al pasar por el menú, el edificio se asoma hacia la planta de destino.
@@ -530,6 +539,15 @@ document.addEventListener('pointerout', (e) => {
   const a = e.target.closest?.('.nav-item[data-pagina]');
   if (a && !a.contains(e.relatedTarget)) asomar(null);
 });
+
+// En móvil, el botón + se esconde al bajar y reaparece al subir (o al llegar arriba).
+let yPrev = 0;
+addEventListener('scroll', () => {
+  const y = scrollY;
+  if (Math.abs(y - yPrev) < 6) return;
+  document.documentElement.classList.toggle('fab-oculto', y > yPrev && y > 60);
+  yPrev = y;
+}, { passive: true });
 
 function iniciar() {
   iniciarEscena();
