@@ -1,0 +1,10 @@
+{
+  "name": "gestion-alquileres",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PWA para gestionar pisos de alquiler",
+  "scripts": {
+    "start": "npx http-server -c-1 -p 8080 .",
+    "test": "node --test tests/calc.test.mjs"
+  }
+}
