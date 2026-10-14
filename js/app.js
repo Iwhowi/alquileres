@@ -12,7 +12,7 @@ import { vistaCalendario } from './views/calendario.js';
 import { vistaFiscal, calculoFiscal } from './views/fiscal.js';
 import { vistaAjustes } from './views/ajustes.js';
 import * as F from './forms.js';
-import { iniciarEscena, irAPlanta, PLANTA_DE, nombrePlanta, etiquetaPlanta } from './building.js';
+import { iniciarEscena, irAPlanta, plantaDe, asomar } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
 app.version = '2.0.0';
@@ -27,7 +27,12 @@ const NAV = [
   ['ajustes', 'Ajustes', 'ajustes'],
 ];
 const NAV_MOVIL = ['', 'cobros', 'gastos', 'calendario', 'pisos'];
-const pagina = (seccion) => (seccion === 'piso' ? 'pisos' : PLANTA_DE[seccion] != null ? seccion : '');
+const PAGINAS = ['', 'cobros', 'gastos', 'calendario', 'pisos', 'fiscal', 'ajustes'];
+/** Planta del edificio de cada ruta: las fichas de piso tienen cada una la suya. */
+function destino(seccion, id) {
+  if (seccion === 'piso') return { pagina: 'piso', idx: Math.max(0, app.s?.pisos.findIndex((p) => p.id === id) ?? 0) };
+  return { pagina: PAGINAS.includes(seccion) ? seccion : '', idx: 0 };
+}
 
 function ruta() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -36,9 +41,11 @@ function ruta() {
 }
 
 let ultimaSeccion = null;
+let ultimoId = null;
+let vieneDeBienvenida = false;
 let ultimoDia = todayISO();
 
-function render() {
+function render({ oculto = false } = {}) {
   const { seccion, id } = ruta();
   const main = document.getElementById('main');
   if (!app.s) { ultimaSeccion = null; return renderBienvenida(); }
@@ -61,41 +68,51 @@ function render() {
   }
   const activa = seccion === 'piso' ? 'pisos' : seccion;
   document.body.dataset.ruta = activa || 'panel';
-  const entrando = seccion !== ultimaSeccion;
+  const entrando = seccion !== ultimaSeccion || id !== ultimoId;
+  const primera = ultimaSeccion === null;
   const scroll = entrando ? 0 : window.scrollY;
   main.classList.remove('saliendo');
   main.innerHTML = String(vista);
-  ponerPlaca(main, pagina(seccion));
   renderNav(activa, entrando);
+  ultimaSeccion = seccion;
+  ultimoId = id;
   if (entrando) {
     window.scrollTo(0, 0);
     main.focus({ preventScroll: true });
-    irAPlanta(pagina(seccion));
-    entrar(main);
+    const dest = destino(seccion, id);
+    if (oculto) main.classList.add('en-viaje');
+    else if (primera) {
+      // Al abrir la app (o al salir del portal) el ascensor sube hasta la planta con el contenido oculto.
+      const desdePortal = vieneDeBienvenida;
+      vieneDeBienvenida = false;
+      main.classList.add('en-viaje');
+      llegar(main, irAPlanta(dest.pagina, { ...dest, desde: desdePortal ? null : plantaDe(dest.pagina, dest.idx) - 3 }));
+    } else {
+      irAPlanta(dest.pagina, dest);
+      entrar(main);
+    }
   } else window.scrollTo(0, scroll);
   pildoras(main);
-  ultimaSeccion = seccion;
   document.title = `${NAV.find((n) => n[0] === activa)?.[1] || 'Panel'} · Alquileres`;
 }
 app.render = render;
 
-/** Placa de planta en la cabecera de cada página. */
-function ponerPlaca(main, pag) {
-  const h1 = main.querySelector('.page-head h1');
-  if (!h1) return;
-  const k = PLANTA_DE[pag];
-  const tag = document.createElement('span');
-  tag.className = 'floor-tag';
-  tag.innerHTML = `<b>${etiquetaPlanta(k)}</b>${nombrePlanta(k)}`;
-  h1.before(tag);
+/** Muestra la página cuando la cabina llega (como mucho 1,6 s después, por si acaso). */
+function llegar(main, viaje) {
+  const id = ++navId;
+  Promise.race([viaje, new Promise((r) => setTimeout(r, 1600))]).then(() => {
+    if (id !== navId) return;
+    main.classList.remove('en-viaje');
+    entrar(main);
+  });
 }
 
 function renderNav(activa, entrando) {
   const n = avisos().total;
   const badge = (k) => (k === '' && n ? `<span class="badge" aria-label="${n} avisos">${n}</span>` : '');
   const nav = document.getElementById('sidenav');
-  nav.innerHTML = `<div class="side-title">Ascensor · plantas</div>` + NAV.map(
-    ([k, t, i]) => `<a href="#/${k}" class="nav-item${activa === k ? ' active' : ''}"${activa === k ? ' aria-current="page"' : ''} title="${nombrePlanta(PLANTA_DE[k])}">${ICON[i]}<span>${t}</span>${badge(k)}<span class="nav-floor" aria-hidden="true">${etiquetaPlanta(PLANTA_DE[k])}</span></a>`,
+  nav.innerHTML = NAV.map(
+    ([k, t, i]) => `<a href="#/${k}" class="nav-item${activa === k ? ' active' : ''}"${activa === k ? ' aria-current="page"' : ''} data-pagina="${k}">${ICON[i]}<span>${t}</span>${badge(k)}</a>`,
   ).join('');
   indicadorNav(nav);
   const movil = NAV_MOVIL.map((k) => NAV.find((x) => x[0] === k));
@@ -109,6 +126,7 @@ function renderBienvenida() {
   document.getElementById('sidenav').innerHTML = '';
   document.getElementById('tabbar').innerHTML = '';
   delete document.body.dataset.ruta;
+  vieneDeBienvenida = true;
   irAPlanta('__portal');
   const main = document.getElementById('main');
   main.classList.remove('saliendo');
@@ -451,20 +469,40 @@ async function importar(input) {
 
 /* ───────────── Arranque ───────────── */
 
-/** Cambio de página: el contenido sale, el ascensor viaja y la nueva planta entra. */
-let tSalida = 0;
+/**
+ * Cambio de página, coreografiado: el contenido sale (0,19 s), la cabina cierra puertas y el
+ * edificio viaja con la escena a la vista; al llegar se abren las puertas y entra la nueva planta.
+ */
+let navId = 0;
 function navegar() {
   const main = document.getElementById('main');
-  const nueva = ruta().seccion;
-  if (!app.s || ultimaSeccion === null || nueva === ultimaSeccion || matchMedia('(prefers-reduced-motion: reduce)').matches) return render();
-  const de = PLANTA_DE[pagina(ultimaSeccion)];
-  const a = PLANTA_DE[pagina(nueva)];
+  const { seccion, id } = ruta();
+  if (!app.s || ultimaSeccion === null || (seccion === ultimaSeccion && id === ultimoId) || matchMedia('(prefers-reduced-motion: reduce)').matches) return render();
+  const nuevo = destino(seccion, id);
+  const viejo = destino(ultimaSeccion, ultimoId);
+  const a = plantaDe(nuevo.pagina, nuevo.idx);
+  const de = plantaDe(viejo.pagina, viejo.idx);
   main.dataset.dir = a > de ? 'up' : 'down';
-  if (a !== de) irAPlanta(pagina(nueva));
+  asomar(null);
+  const viaje = irAPlanta(nuevo.pagina, nuevo);
   main.classList.add('saliendo');
-  clearTimeout(tSalida);
-  tSalida = setTimeout(render, 200);
+  const miId = ++navId;
+  setTimeout(() => {
+    if (miId !== navId) return;
+    render({ oculto: true });
+    llegar(main, viaje);
+  }, 190);
 }
+
+// Al pasar por el menú, el edificio se asoma hacia la planta de destino.
+document.addEventListener('pointerover', (e) => {
+  const a = e.target.closest?.('.nav-item[data-pagina]');
+  if (a && !a.classList.contains('active')) asomar(a.dataset.pagina);
+});
+document.addEventListener('pointerout', (e) => {
+  const a = e.target.closest?.('.nav-item[data-pagina]');
+  if (a && !a.contains(e.relatedTarget)) asomar(null);
+});
 
 function iniciar() {
   iniciarEscena();
