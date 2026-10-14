@@ -33,9 +33,15 @@ const kDe = (s, h) => INICIO[s] + SECCIONES[s][2] - 1 - h; // planta k de la sec
  * Planta de entrada de una ruta. Las fichas de piso viven en la planta de Pisos, una altura por piso
  * (3B, 3C…); la ficha del calendario de un turístico, en la altura B de Calendario.
  */
+let totalPisos = 7;
+let idsPisos = [];
+/** La app indica los pisos para dar una altura a cada ficha y hacer clicables sus plantas. */
+export function definirPisos(ids) { idsPisos = ids; totalPisos = Math.max(7, ids.length); cache.clear(); }
+
 export function plantaDe(pagina, idx = 0) {
   if (pagina === '__portal') return -0.38;
-  if (pagina === 'piso') return kDe(S_DE.pisos, 1 + (Math.max(0, idx) % 7));
+  // Una altura por piso (3B…3H); con más de 7 pisos se reparten en alturas intermedias, sin repetirse.
+  if (pagina === 'piso') return kDe(S_DE.pisos, 1 + Math.max(0, idx) * (6 / (totalPisos - 1)));
   if (pagina === 'calendario' && idx > 0) return kDe(S_DE.calendario, 1);
   return kDe(S_DE[pagina] ?? 6, 0);
 }
@@ -45,7 +51,7 @@ function sueloDe(pagina, idx) {
   const s = S_DE[pagina === 'piso' ? 'pisos' : pagina] ?? 6;
   // En Pisos el scroll del listado recorre 3 alturas; cada ficha baja como mucho una altura.
   if (pagina === 'pisos') return kDe(s, 3);
-  if (pagina === 'piso') return plantaDe(pagina, idx) - 0.6;
+  if (pagina === 'piso') return plantaDe(pagina, idx) - 0.42; // sin llegar a la altura del piso siguiente
   if (pagina === 'calendario' && idx > 0) return plantaDe(pagina, idx) - 2;
   return INICIO[s];
 }
@@ -316,9 +322,8 @@ export function iniciarEscena() {
       <linearGradient id="g-beam" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--sc-glow)" stop-opacity="0.5"/><stop offset="1" stop-color="var(--sc-glow)" stop-opacity="0"/></linearGradient>
     </defs></svg>
     <div class="sky"></div><div class="skyline far"></div><div class="skyline near"></div>
-    <div class="edificio"></div><div class="estelas"></div>
-    <div class="torre"><div class="torre-estructura"></div><div class="contrapeso"></div>
-      <div class="cabina" data-action="ascensor" title="Abrir el ascensor"><div class="cabina-luz"></div><div class="persona"></div><div class="puerta pi"></div><div class="puerta pd"></div></div></div>`;
+    <div class="edificio"><div class="torre"><div class="torre-estructura"></div><div class="contrapeso"></div>
+      <div class="cabina" data-action="ascensor" title="Abrir el ascensor"><div class="cabina-luz"></div><div class="persona"></div><div class="puerta pi"></div><div class="puerta pd"></div></div></div></div><div class="estelas"></div>`;
   st.edificio = el.querySelector('.edificio');
   st.torre = el.querySelector('.torre-estructura');
   st.cabina = el.querySelector('.cabina');
@@ -475,6 +480,9 @@ function tick(now) {
     st.f = Math.abs(obj - nf) <= 0.0004 ? obj : nf;
   }
   st.vel = (st.vel * 0.7) + (Math.abs(st.f - st.fPrev) / dt * 1000) * 0.3; // plantas por segundo
+  // Mientras el edificio se mueve, el cristal de las tarjetas se aclara para dejarlo ver (móvil).
+  const mov = st.vel > (st.movClase ? 0.15 : 0.6);
+  if (mov !== st.movClase) { document.documentElement.classList.toggle('escena-mov', mov); st.movClase = mov; }
   st.fPrev = st.f;
   st.empuje *= 1 - suave(260);
   if (Math.abs(st.empuje) < 0.002) st.empuje = 0; else quieto = false;
@@ -524,7 +532,15 @@ function pintar(fCab) {
         el._niebla = el.querySelector('.niebla');
       }
       if (el._numTxt) el._numTxt.textContent = etiquetaPlanta(k);
-      if (el._num) { el._num.dataset.action = 'ir-planta'; el._num.dataset.ir = paginaDePlanta(k); el._num.title = `Ir a ${rotuloPared(k)}`; }
+      if (el._num) {
+        // En la planta de Pisos, cada altura B… abre la ficha de su piso.
+        const s = seccionDe(k);
+        const h = s === S_DE.pisos ? altura(k) : 0;
+        const idx = h >= 1 ? Math.round((h - 1) * ((totalPisos - 1) / 6)) : -1;
+        el._num.dataset.action = 'ir-planta';
+        el._num.dataset.ir = idx >= 0 && idsPisos[idx] ? `piso/${encodeURIComponent(idsPisos[idx])}` : paginaDePlanta(k);
+        el._num.title = idx >= 0 && idsPisos[idx] ? 'Abrir la ficha de este piso' : `Ir a ${rotuloPared(k)}`;
+      }
       if (el._rot) el._rot.textContent = rotuloPared(k);
       if (st.tween) st.luces = null;
       el.className = `planta${k === 0 ? ' bajo' : ''}${k === TOP ? ' atico' : ''}${k === TOP + 1 ? ' azotea' : ''}${k === -1 ? ' calle' : ''}${(k * 7) % 5 < 2 ? ' lit' : ''} t${k % 3}`;
@@ -579,7 +595,10 @@ function actualizarHud() {
   if (!hud) return;
   const k = Math.max(0, Math.min(TOP, st.activa ?? Math.round(st.f)));
   const odo = hud.querySelector('.odo');
-  if (odo) odo.style.transform = `translateY(${-k * 1.25}em)`;
+  if (odo) {
+    odo.style.transition = st.tween ? 'none' : ''; // en marcha, el número va justo con el rótulo
+    odo.style.transform = `translateY(${-k * 1.25}em)`;
+  }
   const nom = st.nombre || (st.pagina === '__portal' ? 'Portal' : st.pagina === 'piso' ? 'Ficha del piso' : nombreSeccion(st.pagina));
   hud.querySelector('.hud-nom').textContent = nom;
   hud.querySelector('.hud-planta').textContent = nombrePlanta(k);

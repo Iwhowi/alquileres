@@ -12,7 +12,7 @@ import { vistaCalendario } from './views/calendario.js';
 import { vistaFiscal, calculoFiscal } from './views/fiscal.js';
 import { vistaAjustes } from './views/ajustes.js';
 import * as F from './forms.js';
-import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion } from './building.js';
+import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
 app.version = '2.0.0';
@@ -73,6 +73,8 @@ function render({ oculto = false } = {}) {
   const activa = seccion === 'piso' ? 'pisos' : seccion;
   document.body.dataset.ruta = activa || 'panel';
   const entrando = seccion !== ultimaSeccion || id !== ultimoId;
+  const ids = app.s.pisos.map((p) => p.id).join('|');
+  if (ids !== render._ids) { definirPisos(app.s.pisos.map((p) => p.id)); render._ids = ids; }
   const primera = ultimaSeccion === null;
   const scroll = entrando ? 0 : window.scrollY;
   main.classList.remove('saliendo');
@@ -207,7 +209,7 @@ const acciones = {
         <div class="ascensor">${[...SECCIONES].reverse().map(([k, nombre]) => html`
           <button type="button" class="boton-planta${k === pag ? ' on' : ''}" data-ir="${k}"><b>${numeroSeccion(k)}</b><span><strong>${nombre}</strong><small>Planta ${numeroSeccion(k)}</small></span></button>`)}</div>`,
     });
-    document.querySelectorAll('[data-ir]').forEach((b) => b.addEventListener('click', () => { F.cerrarDialogo(); location.hash = `#/${b.dataset.ir}`; }));
+    document.querySelectorAll('#dialogo [data-ir]').forEach((b) => b.addEventListener('click', () => { F.cerrarDialogo(); location.hash = `#/${b.dataset.ir}`; }));
   },
   'mas-gastos': () => { app.ui.gastosLimite = (app.ui.gastosLimite || 60) + 60; render(); },
   'tip-visto': () => { app.s.ajustes.tipEdificio = true; commit(); },

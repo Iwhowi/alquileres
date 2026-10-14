@@ -8,8 +8,10 @@ function observar() {
   if (observador) return observador;
   observador = new IntersectionObserver((entradas) => {
     const visibles = entradas.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top || a.boundingClientRect.left - b.boundingClientRect.left);
-    visibles.forEach((e, i) => {
-      e.target.style.setProperty('--d', `${Math.min(i, 8) * 70}ms`);
+    // Escalonado de arriba abajo según el orden en la página.
+    const base = Math.min(...visibles.map((e) => Number(e.target.dataset.rvi) || 0));
+    visibles.forEach((e) => {
+      e.target.style.setProperty('--d', `${Math.min((Number(e.target.dataset.rvi) || 0) - base, 8) * 70}ms`);
       e.target.classList.add('in');
       observador.unobserve(e.target);
       if (e.target.matches('.kpi')) contar(e.target);
@@ -27,8 +29,8 @@ export function entrar(main) {
   const obs = observar();
   const els = [...main.querySelectorAll(OBJETIVOS)].filter((el) => !el.parentElement.closest('.card, .welcome-options'));
   els.forEach((el, i) => {
-    // Los bloques muy altos (listas largas) se muestran ya, pero en su turno del escalonado.
-    if (el.offsetHeight > innerHeight * 0.8) { el.style.setProperty('--d', `${Math.min(i, 8) * 70}ms`); el.classList.add('rv', 'in'); return; }
+    // Con threshold 0 también los bloques muy altos entran en cuanto asoma su borde, en orden.
+    el.dataset.rvi = i;
     el.classList.add('rv');
     obs.observe(el);
   });

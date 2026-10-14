@@ -439,3 +439,27 @@ dialog::backdrop { animation: fondo 0.3s var(--ease); }
   .torre { width: 18px; right: 3px; }
   .cabina { width: 18px; height: 28px; margin-left: -9px; top: calc(var(--suelo-y, 70%) - var(--planta-h) * 0.04 - 28px); }
 }
+
+/* ───────────── Ronda 4 de diseño ───────────── */
+#escena { user-select: none; -webkit-user-select: none; }
+/* La torre del ascensor es parte del edificio: se aleja con él en la vista general */
+.edificio > .torre { position: absolute; top: -100vh; bottom: -100vh; left: calc(100% + 54px); right: auto; width: calc(var(--gutter) - 66px); }
+.edificio > .torre .torre-estructura { top: 100vh; height: calc(100vh + var(--planta-h) * 2); }
+.edificio > .torre .cabina { top: calc(100vh + var(--suelo-y, 70%) - var(--planta-h) * 0.04 - 70px); }
+.edificio > .torre .contrapeso { top: 100vh; }
+@media (max-width: 1179px) {
+  .edificio > .torre { left: auto; right: 3px; width: 24px; }
+  .edificio > .torre .cabina { width: 24px; height: 34px; margin-left: -12px; top: calc(100vh + var(--suelo-y, 70%) - var(--planta-h) * 0.04 - 34px); }
+}
+/* Zona táctil de 44 px para la cabina */
+.cabina::after { content: ''; position: absolute; inset: -12px; }
+.cabina { overflow: visible; }
+.cabina > .puerta, .cabina > .persona, .cabina > .cabina-luz { clip-path: inset(0 round 6px); }
+/* Los números de planta se ven tocables sin pasar el ratón */
+.planta-num small::after { content: ' ›'; letter-spacing: 0; }
+/* Móvil: mientras el edificio se mueve, el cristal se aclara */
+@media (max-width: 899px) {
+  .card, .kpi, .piso-card, .quick-tile, .month-nav, .page-head { transition: background-color 0.35s ease; }
+  html.escena-mov { --glass: color-mix(in srgb, var(--surface) 62%, transparent); --glass-strong: color-mix(in srgb, var(--surface) 80%, transparent); }
+}
+.glow, .beam { will-change: opacity; }
