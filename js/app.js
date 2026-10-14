@@ -12,8 +12,10 @@ import { vistaCalendario } from './views/calendario.js';
 import { vistaFiscal, calculoFiscal } from './views/fiscal.js';
 import { vistaAjustes } from './views/ajustes.js';
 import * as F from './forms.js';
+import { iniciarEscena, irAPlanta, PLANTA_DE, nombrePlanta, etiquetaPlanta } from './building.js';
+import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '1.3.0';
+app.version = '2.0.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -25,6 +27,7 @@ const NAV = [
   ['ajustes', 'Ajustes', 'ajustes'],
 ];
 const NAV_MOVIL = ['', 'cobros', 'gastos', 'calendario', 'pisos'];
+const pagina = (seccion) => (seccion === 'piso' ? 'pisos' : PLANTA_DE[seccion] != null ? seccion : '');
 
 function ruta() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -38,7 +41,7 @@ let ultimoDia = todayISO();
 function render() {
   const { seccion, id } = ruta();
   const main = document.getElementById('main');
-  if (!app.s) return renderBienvenida();
+  if (!app.s) { ultimaSeccion = null; return renderBienvenida(); }
   // Si la app ha estado abierta de un día para otro, genera los recibos y gastos nuevos.
   if (todayISO() !== ultimoDia) {
     ultimoDia = todayISO();
@@ -58,35 +61,59 @@ function render() {
   }
   const activa = seccion === 'piso' ? 'pisos' : seccion;
   document.body.dataset.ruta = activa || 'panel';
-  const scroll = seccion === ultimaSeccion ? window.scrollY : 0;
+  const entrando = seccion !== ultimaSeccion;
+  const scroll = entrando ? 0 : window.scrollY;
+  main.classList.remove('saliendo');
   main.innerHTML = String(vista);
-  renderNav(activa);
-  if (seccion !== ultimaSeccion) {
+  ponerPlaca(main, pagina(seccion));
+  renderNav(activa, entrando);
+  if (entrando) {
     window.scrollTo(0, 0);
     main.focus({ preventScroll: true });
+    irAPlanta(pagina(seccion));
+    entrar(main);
   } else window.scrollTo(0, scroll);
+  pildoras(main);
   ultimaSeccion = seccion;
   document.title = `${NAV.find((n) => n[0] === activa)?.[1] || 'Panel'} · Alquileres`;
 }
 app.render = render;
 
-function renderNav(activa) {
+/** Placa de planta en la cabecera de cada página. */
+function ponerPlaca(main, pag) {
+  const h1 = main.querySelector('.page-head h1');
+  if (!h1) return;
+  const k = PLANTA_DE[pag];
+  const tag = document.createElement('span');
+  tag.className = 'floor-tag';
+  tag.innerHTML = `<b>${etiquetaPlanta(k)}</b>${nombrePlanta(k)}`;
+  h1.before(tag);
+}
+
+function renderNav(activa, entrando) {
   const n = avisos().total;
   const badge = (k) => (k === '' && n ? `<span class="badge" aria-label="${n} avisos">${n}</span>` : '');
-  document.getElementById('sidenav').innerHTML = NAV.map(
-    ([k, t, i]) => `<a href="#/${k}" class="nav-item${activa === k ? ' active' : ''}"${activa === k ? ' aria-current="page"' : ''}>${ICON[i]}<span>${t}</span>${badge(k)}</a>`,
+  const nav = document.getElementById('sidenav');
+  nav.innerHTML = `<div class="side-title">Ascensor · plantas</div>` + NAV.map(
+    ([k, t, i]) => `<a href="#/${k}" class="nav-item${activa === k ? ' active' : ''}"${activa === k ? ' aria-current="page"' : ''} title="${nombrePlanta(PLANTA_DE[k])}">${ICON[i]}<span>${t}</span>${badge(k)}<span class="nav-floor" aria-hidden="true">${etiquetaPlanta(PLANTA_DE[k])}</span></a>`,
   ).join('');
+  indicadorNav(nav);
   const movil = NAV_MOVIL.map((k) => NAV.find((x) => x[0] === k));
   const enMas = !NAV_MOVIL.includes(activa);
   document.getElementById('tabbar').innerHTML =
-    movil.map(([k, t, i]) => `<a href="#/${k}" class="tab${activa === k ? ' active' : ''}"${activa === k ? ' aria-current="page"' : ''}>${ICON[i]}<span>${t}</span>${badge(k)}</a>`).join('') +
+    movil.map(([k, t, i]) => `<a href="#/${k}" class="tab${activa === k ? ' active' : ''}${activa === k && entrando ? ' salto' : ''}"${activa === k ? ' aria-current="page"' : ''}>${ICON[i]}<span>${t}</span>${badge(k)}</a>`).join('') +
     `<button class="tab${enMas ? ' active' : ''}" data-action="menu-mas">${ICON.mas}<span>Más</span></button>`;
 }
 
 function renderBienvenida() {
   document.getElementById('sidenav').innerHTML = '';
   document.getElementById('tabbar').innerHTML = '';
-  document.getElementById('main').innerHTML = String(html`
+  delete document.body.dataset.ruta;
+  irAPlanta('__portal');
+  const main = document.getElementById('main');
+  main.classList.remove('saliendo');
+  setTimeout(() => entrar(main), 0);
+  main.innerHTML = String(html`
     <section class="welcome">
       <div class="welcome-mark">${raw(ICON.key)}</div>
       <h1>Gestión de alquileres</h1>
@@ -145,9 +172,10 @@ const acciones = {
   },
   'toggle-extra': (el) => { app.ui.incluirExtra = el.checked; render(); },
   'mas-gastos': () => { app.ui.gastosLimite = (app.ui.gastosLimite || 60) + 60; render(); },
+  'tip-visto': () => { app.s.ajustes.tipEdificio = true; commit(); },
   'avisos-todos': () => { app.ui.avisosTodos = !app.ui.avisosTodos; render(); },
   'actualizar-renta': (el) => F.actualizarRenta(el.dataset.id),
-  'filtro-cobros': (el) => { app.ui.cobros.estado = el.dataset.estado; render(); },
+  'filtro-cobros': (el) => { app.ui.cobros.estado = el.dataset.estado; if (el.tagName !== 'A') render(); },
   'cal-piso': (el) => { app.ui.cal.piso = el.dataset.id; location.hash = `#/calendario/${el.dataset.id}`; },
   'ver-gastos-piso': (el, e) => { e.preventDefault(); Object.assign(app.ui.gastos, { piso: el.dataset.piso, anio: '', mes: '', cat: '', q: '' }); location.hash = '#/gastos'; },
   copiar: async (el) => {
@@ -423,12 +451,28 @@ async function importar(input) {
 
 /* ───────────── Arranque ───────────── */
 
+/** Cambio de página: el contenido sale, el ascensor viaja y la nueva planta entra. */
+let tSalida = 0;
+function navegar() {
+  const main = document.getElementById('main');
+  const nueva = ruta().seccion;
+  if (!app.s || ultimaSeccion === null || nueva === ultimaSeccion || matchMedia('(prefers-reduced-motion: reduce)').matches) return render();
+  const de = PLANTA_DE[pagina(ultimaSeccion)];
+  const a = PLANTA_DE[pagina(nueva)];
+  main.dataset.dir = a > de ? 'up' : 'down';
+  if (a !== de) irAPlanta(pagina(nueva));
+  main.classList.add('saliendo');
+  clearTimeout(tSalida);
+  tSalida = setTimeout(render, 200);
+}
+
 function iniciar() {
+  iniciarEscena();
   app.s = cargar();
   if (app.s) {
     if (sincronizar(app.s, today())) guardar(app.s);
   }
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', navegar);
   // Al volver a la app solo se repinta si ha cambiado el día (para no perder lo que se esté escribiendo).
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && app.s && todayISO() !== ultimoDia && !document.querySelector('dialog[open]')) render();

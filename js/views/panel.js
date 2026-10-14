@@ -24,11 +24,33 @@ export function vistaPanel() {
     <header class="page-head">
       <div>
         <h1>Panel</h1>
-        <p class="muted">${plural(s.pisos.length, 'piso', 'pisos')} · ${s.titulares.map((t) => t.nombre).join(' y ')}</p>
+        <p class="hoy">${resumenHoy(av, s)}</p>
       </div>
       ${selectorMes(ym, 'mes')}
     </header>
 
+    <nav class="quick-tiles" aria-label="Acciones rápidas">
+      <a class="quick-tile" href="#/cobros"><span class="quick-ic">${raw(ICON.cobros)}</span><span><strong>Cobrar</strong><span>Marcar recibos cobrados</span></span></a>
+      <button class="quick-tile" data-action="nuevo-gasto"><span class="quick-ic">${raw(ICON.gastos)}</span><span><strong>Añadir gasto</strong><span>Factura, reparación…</span></span></button>
+      ${s.pisos.some((p) => p.modalidad === 'turistico')
+        ? html`<button class="quick-tile" data-action="nueva-reserva"><span class="quick-ic">${raw(ICON.calendario)}</span><span><strong>Nueva reserva</strong><span>Piso turístico</span></span></button>`
+        : html`<a class="quick-tile" href="#/pisos"><span class="quick-ic">${raw(ICON.pisos)}</span><span><strong>Mis pisos</strong><span>Inquilinos y contratos</span></span></a>`}
+      <a class="quick-tile" href="#/cobros" data-action="filtro-cobros" data-estado="impagado"><span class="quick-ic">${raw(ICON.bell)}</span><span><strong>Impagos</strong><span>${av.impagos.length ? `${plural(av.impagos.length, 'persona', 'personas')} por reclamar` : 'Ninguno, todo al día'}</span></span></a>
+    </nav>
+
+    ${app.s.ajustes.tipEdificio ? '' : html`
+      <section class="card tip">
+        <span class="tip-ic">${raw(ICON.pisos)}</span>
+        <div>
+          <h2>Tu cartera es un edificio</h2>
+          <ol>
+            <li>Cada sección es una planta: el menú es el ascensor y te lleva de una a otra.</li>
+            <li>Al bajar por la página, bajas de planta; el indicador te dice dónde estás.</li>
+            <li>Empieza por los botones de arriba: cobrar, añadir un gasto o reclamar un impago.</li>
+          </ol>
+        </div>
+        <button class="btn btn-sm" data-action="tip-visto">Entendido</button>
+      </section>`}
     ${bannerInstalar()}
     ${bannerBackup()}
     ${bloqueAvisos(av)}
@@ -60,6 +82,20 @@ export function vistaPanel() {
       ${bloqueOcupacion(ym)}
     </div>
     </div>`;
+}
+
+/** Frase de resumen del día, para entender el estado de un vistazo. */
+function resumenHoy(av, s) {
+  const partes = [];
+  const imp = av.impagos.reduce((a, g) => a + g.total, 0);
+  if (av.impagos.length) partes.push(html`<span class="t-neg">${fmtEUR0(imp)} sin cobrar</span> de ${plural(av.impagos.length, 'persona', 'personas')}`);
+  if (av.hoyVence.length) partes.push(html`<b>${plural(av.hoyVence.length, 'recibo vence', 'recibos vencen')} hoy</b>`);
+  if (av.contratos.length) partes.push(html`<b>${plural(av.contratos.length, 'contrato', 'contratos')}</b> por renovar`);
+  const ent = av.movimientos.filter((m) => m.tipo === 'entrada').length;
+  const sal = av.movimientos.filter((m) => m.tipo === 'salida').length;
+  if (ent || sal) partes.push(html`${ent ? `${ent} ${ent === 1 ? 'entrada' : 'entradas'}` : ''}${ent && sal ? ' y ' : ''}${sal ? `${sal} ${sal === 1 ? 'salida' : 'salidas'}` : ''} en el turístico`);
+  if (!partes.length) return html`Todo en orden en tus ${plural(s.pisos.length, 'piso', 'pisos')}. Sin impagos ni contratos por vencer.`;
+  return html`Hoy: ${partes.map((p, i) => html`${i ? (i === partes.length - 1 ? ' y ' : ', ') : ''}${p}`)}.`;
 }
 
 export function selectorMes(ym, clave) {

@@ -16,8 +16,10 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/escena.css">
 </head>
 <body>
+  <div id="escena" aria-hidden="true"></div>
   <div class="shell">
     <aside class="side" aria-label="Navegación">
       <div class="brand">
@@ -27,6 +29,11 @@
       <nav id="sidenav"></nav>
       <div class="side-foot">Datos guardados en este dispositivo</div>
     </aside>
+    <header class="topbar" aria-hidden="true"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 4l9 6.5"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-5h4v5"/></svg></span><span>Alquileres</span></header>
+    <div id="hud" class="hud" aria-hidden="true" title="Planta del edificio en la que estás">
+      <span class="hud-arrows" aria-hidden="true"><i class="up"></i><i class="down"></i></span>
+      <span class="hud-num">Á</span><span class="hud-nom">Ático</span>
+    </div>
     <main id="main" tabindex="-1"></main>
     <nav id="tabbar" aria-label="Navegación"></nav>
     <button class="fab" data-action="fab" aria-label="Añadir">
