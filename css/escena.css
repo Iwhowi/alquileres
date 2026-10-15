@@ -556,3 +556,13 @@ dialog.visor[open] { display: flex; }
 .import-errores li { margin: 3px 0; }
 .import-avisos { margin-top: 12px; padding: 10px 14px; border-radius: 12px; background: var(--warn-soft); color: var(--ink); }
 .import-avisos ul { margin: 6px 0 0; padding-left: 18px; }
+/* Asistente de importación libre */
+.libre-hojas { display: grid; gap: 14px; margin-top: 12px; }
+.libre-hoja { border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: var(--surface); }
+.libre-hoja > header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.libre-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; margin-top: 10px; }
+.libre-col { display: grid; gap: 4px; font-size: 13px; }
+.libre-col > span { display: flex; flex-direction: column; min-width: 0; }
+.libre-col small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.libre-col select { width: 100%; }
+.libre-col.field select { height: 40px; font-size: 14px; padding-top: 0; padding-bottom: 0; }

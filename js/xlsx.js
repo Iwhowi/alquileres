@@ -128,7 +128,15 @@ const xmlDe = (txt) => {
  * Lee un .xlsx → { nombreHoja: [[valor, …], …] } (valores: string o number; las fechas llegan como
  * número de serie salvo que la celda sea texto).
  */
-export async function leerXlsx(blob) {
+// Formatos de número integrados de Excel que son fechas.
+const FMT_FECHA = new Set([14, 15, 16, 17, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 50, 51, 52, 53, 54, 55, 56, 57, 58]);
+const esCodigoFecha = (code) => /[dmy]/i.test(String(code).replace(/"[^"]*"|\[[^\]]*\]|\\./g, '')) && !/^[#0.,\s%]*$/.test(code);
+
+/**
+ * `fechas: true` → las celdas con formato de fecha se devuelven como 'AAAA-MM-DD' (útil para leer
+ * libros de cualquier origen, donde no se sabe qué columnas son fechas).
+ */
+export async function leerXlsx(blob, { fechas = false } = {}) {
   const entradas = await leerZip(blob);
   const dec = new TextDecoder();
   const arch = Object.fromEntries(entradas.map((e) => [e.nombre.replace(/^\//, ''), e.datos]));
@@ -147,6 +155,19 @@ export async function leerXlsx(blob) {
   const wbDoc = xmlDe(wb);
   const pr = porTag(wbDoc, 'workbookPr')[0]?.getAttribute('date1904');
   Object.defineProperty(libro, 'fecha1904', { value: pr === '1' || pr === 'true', enumerable: false });
+  // Estilos de fecha (índice de estilo de celda → es fecha)
+  const estiloFecha = [];
+  const st = fechas && texto('xl/styles.xml');
+  if (st) {
+    const doc = xmlDe(st);
+    const propios = Object.fromEntries(porTag(doc, 'numFmt').map((n) => [Number(n.getAttribute('numFmtId')), n.getAttribute('formatCode') || '']));
+    const xfs = porTag(doc, 'cellXfs')[0];
+    if (xfs) for (const xf of [...xfs.children].filter((x) => x.localName === 'xf')) {
+      const id = Number(xf.getAttribute('numFmtId') || 0);
+      estiloFecha.push(FMT_FECHA.has(id) || (id in propios && esCodigoFecha(propios[id])));
+    }
+  }
+  const desfase = libro.fecha1904 ? 1462 : 0;
   for (const h of porTag(wbDoc, 'sheet')) {
     const rid = h.getAttribute('r:id') || h.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
     let ruta = destino[rid] || '';
@@ -169,13 +190,48 @@ export async function leerXlsx(blob) {
         else if (t === 'inlineStr') val = textoDe(c);
         else if (t === 'str' || t === 'e') val = v ?? '';
         else if (t === 'b') val = v === '1' ? 'sí' : 'no';
-        else if (v != null && v !== '') val = Number(v);
+        else if (v != null && v !== '') {
+          val = Number(v);
+          if (estiloFecha[Number(c.getAttribute('s') || 0)] && val > 0 && val < 2958466) val = isoDeSerial(val + desfase);
+        }
         else if (porTag(c, 'f').length) val = SIN_CALCULAR;
         fila[ci] = val;
       }
       filas[Number.isFinite(ri) && ri >= 0 ? ri : filas.length] = fila;
     }
     libro[h.getAttribute('name')] = filas.map((f) => (f || []).map((x) => (x == null ? '' : x)));
+  }
+  return libro;
+}
+
+/** Lee una hoja de cálculo de LibreOffice / OpenOffice (.ods) con la misma salida que leerXlsx. */
+export async function leerOds(blob) {
+  const entradas = await leerZip(blob);
+  const c = entradas.find((e) => e.nombre === 'content.xml');
+  if (!c) throw new Error('El archivo .ods no es válido.');
+  const doc = xmlDe(new TextDecoder().decode(c.datos));
+  const libro = {};
+  for (const t of porTag(doc, 'table')) {
+    if (t.namespaceURI && !/table/.test(t.namespaceURI)) continue;
+    const filas = [];
+    for (const row of porTag(t, 'table-row')) {
+      const fila = [];
+      for (const cel of [...row.children].filter((x) => x.localName === 'table-cell' || x.localName === 'covered-table-cell')) {
+        const rep = Math.min(Number(cel.getAttribute('table:number-columns-repeated') || 1), 200);
+        const tipo = cel.getAttribute('office:value-type');
+        let val = '';
+        if (tipo === 'float' || tipo === 'currency' || tipo === 'percentage') val = Number(cel.getAttribute('office:value'));
+        else if (tipo === 'date') val = (cel.getAttribute('office:date-value') || '').slice(0, 10);
+        else if (tipo === 'boolean') val = cel.getAttribute('office:boolean-value') === 'true' ? 'sí' : 'no';
+        else val = porTag(cel, 'p').map((p) => p.textContent).join('\n');
+        for (let i = 0; i < rep; i++) fila.push(val);
+      }
+      while (fila.length && fila[fila.length - 1] === '') fila.pop();
+      const repF = Math.min(Number(row.getAttribute('table:number-rows-repeated') || 1), fila.length ? 1000 : 1);
+      for (let i = 0; i < repF; i++) filas.push([...fila]);
+    }
+    while (filas.length && !filas[filas.length - 1].length) filas.pop();
+    libro[t.getAttribute('table:name') || `Hoja ${Object.keys(libro).length + 1}`] = filas;
   }
   return libro;
 }

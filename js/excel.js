@@ -243,7 +243,7 @@ export async function exportarExcel(s = app.s) {
 
 /** Lee el Excel y aplica los cambios sobre una copia del estado. Devuelve { estado, informe }. */
 export async function prepararImportacion(file, base = app.s) {
-  const libro = await leerXlsx(file);
+  const libro = file instanceof Blob ? await leerXlsx(file) : file; // también acepta un libro ya leído
   const s = migrar(JSON.parse(JSON.stringify(base || estadoVacio())));
   const informe = { hojas: [], errores: [], total: { nuevos: 0, cambiados: 0, borrados: 0 } };
   const hoyImp = today();
@@ -609,16 +609,21 @@ export const hayDeshacer = () => {
   } catch { return false; }
 };
 
-export async function importarExcel(file) {
+export async function importarExcel(file, libro = null) {
   let res;
   try {
-    res = await prepararImportacion(file, app.s);
+    res = await prepararImportacion(libro || file, app.s);
   } catch (e) {
     console.error(e);
     toast(`No se ha podido leer el Excel: ${e.message}`, { tipo: 'error', ms: 8000 });
     return;
   }
-  const { estado, informe } = res;
+  mostrarResumen(file.name, res.estado, res.informe);
+}
+
+/** Resumen de una importación antes de aplicarla. `informe.notas`: líneas extra (importación libre). */
+export function mostrarResumen(nombreArchivo, estado, informe) {
+  const file = { name: nombreArchivo };
   const { nuevos, cambiados, borrados } = informe.total;
   const sinCambios = !nuevos && !cambiados && !borrados;
   const cuerpo = html`
@@ -628,6 +633,7 @@ export async function importarExcel(file) {
       <thead><tr><th>Hoja</th><th class="num">Nuevos</th><th class="num">Cambiados</th><th class="num">Borrados</th><th class="num">Con error</th></tr></thead>
       <tbody>${informe.hojas.map((h) => html`<tr><td>${h.hoja}</td><td class="num">${h.nuevos || ''}</td><td class="num">${h.cambiados || ''}</td><td class="num">${h.borrados ? html`<b class="import-borra">${h.borrados}</b>` : ''}</td><td class="num">${h.errores ? html`<b class="import-err">${h.errores}</b>` : ''}</td></tr>`)}</tbody>
     </table></div>`}
+    ${(informe.notas || []).map((n) => html`<p class="small muted">${n}</p>`)}
     ${informe.titularesCreados ? html`<p class="small muted">${informe.titularesCreados === 1 ? 'Se creará 1 titular nuevo' : `Se crearán ${informe.titularesCreados} titulares nuevos`} que no existía${informe.titularesCreados === 1 ? '' : 'n'}.</p>` : ''}
     ${informe.generados ? html`<p class="small muted">Además se generarán ${informe.generados} recibos o apuntes de gastos fijos automáticos.</p>` : ''}
     ${informe.avisos.length ? html`<div class="import-avisos"><b>Revisa:</b><ul class="small">${informe.avisos.slice(0, 20).map((a) => html`<li>${a}</li>`)}</ul></div>` : ''}
@@ -660,3 +666,6 @@ export async function deshacerImportacion() {
   try { localStorage.removeItem(CLAVE_DESHACER); } catch {}
   commit('Importación deshecha');
 }
+
+// Para el importador de libros con cualquier formato (importar-libre.js)
+export { aFecha, aMes, aNumero, aBool, categoriaDe, modalidadDe, canalDe, H, ORDEN, MOD_TXT, CLAVE_DESHACER };

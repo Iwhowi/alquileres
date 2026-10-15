@@ -30,7 +30,7 @@ La pantalla de bienvenida ofrece:
 1. **Empezar con mi cartera**: crea 2 titulares (tú y tu sociedad) y los 6 pisos vacíos:
    2 tradicionales, 1 por habitaciones y 1 turístico a tu nombre; 2 por habitaciones de la sociedad.
 2. **Ver con datos de ejemplo**: datos ficticios para explorar; se quitan desde Ajustes.
-3. **Empezar desde un Excel**: importa un `.xlsx` con tus pisos, contratos, gastos y pagos.
+3. **Empezar desde mi Excel**: sube la hoja de cálculo que ya usabas, con el formato que tenga.
 4. **Restaurar una copia** JSON exportada desde otro dispositivo.
 
 Después, en cada piso: datos (precio de compra, valor de construcción, reducción IRPF), contratos
@@ -73,6 +73,30 @@ de lo que falta. Conserva los justificantes al menos 4 años.
 
 La copia JSON no incluye los archivos: para pasarlos a otro dispositivo usa **Ajustes → Copia con
 documentos (ZIP)** y restáurala con «Restaurar copia».
+
+## Importar tu propio Excel (cualquier formato)
+
+**Ajustes → Importar mi Excel** (o «Empezar desde mi Excel» en la bienvenida) acepta `.xlsx`, `.ods` y
+`.csv` hechos por cualquiera, sin plantilla. Un asistente analiza cada hoja:
+
+- **Qué contiene**: gastos, ingresos o cobros de alquiler, movimientos mezclados (extracto del banco,
+  con importes positivos y negativos o columnas Debe/Haber), reservas turísticas, inquilinos o
+  contratos, pisos, hipotecas, o una **tabla por meses** (conceptos o pisos en filas y Enero, Febrero…
+  en columnas, con secciones INGRESOS / GASTOS).
+- **Qué es cada columna**, por su título (Fecha, F. valor, Inmueble, Vivienda, Descripción, Total (€),
+  Alquiler €/mes, Llegada, Check-in, Móvil…, también en inglés) y por sus valores (fechas, importes,
+  sí/no). La cabecera puede estar en cualquier fila; las filas de totales se ignoran.
+- **Los pisos**: los nombres que aparecen en columnas, filas o nombres de hoja («Piso 1», «Ático
+  Centro»). Para cada uno se elige si es un piso que ya está en la app, uno nuevo o el mismo que otro
+  escrito de otra forma («Mayor 12» = «C/ Mayor 12, 2.º A»). La modalidad se deduce (reservas →
+  turístico, varias habitaciones → por habitaciones).
+- **Categorías de gasto** por el concepto o el proveedor (comunidad, IBI, Endesa → suministros,
+  fontanero → reparación, Mapfre → seguro…). Las cuotas de hipoteca se importan como no deducibles.
+
+Todo se puede corregir con desplegables antes de continuar. Después se ve el resumen habitual y se
+puede deshacer. Los cobros de un inquilino se enlazan a su contrato y lo que ya estaba en la app no
+se duplica, así que importar dos veces el mismo archivo no repite nada. Los archivos `.numbers`
+deben exportarse antes a Excel (Archivo → Exportar a → Excel).
 
 ## Gestionar todo desde Excel
 

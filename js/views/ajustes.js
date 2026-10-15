@@ -35,16 +35,12 @@ export function vistaAjustes() {
     </section>
 
     <section class="card excel-card" id="excel">
-      <div class="card-head"><h2>Gestionar todo desde Excel</h2></div>
-      <p class="muted">Descarga un Excel con <b>todos tus datos</b> (pisos, titulares, habitaciones, contratos, cobros, reservas, gastos, gastos fijos, hipotecas y ajustes), edítalo en Excel, Numbers o Google Sheets y vuelve a importarlo: la app se rellena sola. Nada se borra salvo las filas que marques con <b>Borrar = sí</b>.</p>
-      <ul class="steps small">
-        <li><b>Editar:</b> cambia la celda. Las filas con ID se actualizan.</li>
-        <li><b>Añadir:</b> escribe una fila nueva sin ID (un piso, un gasto, un pago…).</li>
-        <li><b>Celdas vacías</b> no cambian nada. Antes de aplicar verás un resumen.</li>
-      </ul>
+      <div class="card-head"><h2>Importar tu Excel o gestionar todo desde Excel</h2></div>
+      <p class="muted"><b>¿Ya llevabas tus pisos en una hoja de cálculo?</b> Súbela tal cual (Excel, CSV o LibreOffice, con el formato que tenga). La app reconoce qué hay en cada hoja y cada columna —pisos, inquilinos, gastos, cobros, reservas, hipotecas o tablas por meses—, te enseña lo que ha entendido para que lo corrijas y crea todo. Lo que ya tengas no se duplica ni se borra.</p>
+      <p class="muted small">También puedes descargar un Excel con <b>todos tus datos</b>, editarlo y volver a subirlo: las filas con ID se actualizan, las nuevas se crean y las marcadas con <b>Borrar = sí</b> se eliminan.</p>
       <div class="btn-row">
         <button class="btn btn-primary" data-action="excel-exportar">${raw(ICON.download)}<span>Descargar Excel con mis datos</span></button>
-        <label class="btn">${raw(ICON.upload)}<span>Importar Excel</span><input type="file" accept=".xlsx,.numbers,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-import="xlsx" hidden></label>
+        <label class="btn">${raw(ICON.upload)}<span>Importar mi Excel</span><input type="file" accept=".xlsx,.xls,.ods,.csv,.numbers,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-import="xlsx" hidden></label>
         ${hayDeshacer() ? html`<button class="btn btn-ghost" data-action="excel-deshacer">Deshacer última importación</button>` : ''}
       </div>
     </section>

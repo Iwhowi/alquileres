@@ -12,12 +12,13 @@ import { vistaCalendario } from './views/calendario.js';
 import { vistaFiscal, calculoFiscal } from './views/fiscal.js';
 import { vistaAjustes } from './views/ajustes.js';
 import * as F from './forms.js';
-import { descargarExcel, importarExcel, deshacerImportacion } from './excel.js';
+import { descargarExcel, deshacerImportacion } from './excel.js';
+import { importarArchivo } from './importar-libre.js';
 import { guardarArchivo, leerBlob, ponerBlob, crearZip, leerZip, extension, urlDe } from './docs.js';
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.3.1';
+app.version = '2.4.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -159,9 +160,9 @@ function renderBienvenida() {
           <span>Explora la app con inquilinos, reservas e impagos ficticios. Podrás borrarlos después.</span>
         </button>
         <label class="welcome-opt">
-          <strong>Empezar desde un Excel</strong>
-          <span>Importa un .xlsx con tus pisos, contratos, gastos y pagos. Descarga la plantilla en Ajustes → Excel.</span>
-          <input type="file" accept=".xlsx,.numbers,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-import="xlsx" hidden>
+          <strong>Empezar desde mi Excel</strong>
+          <span>Sube la hoja de cálculo que ya usabas (Excel, CSV…), con el formato que tenga: la app reconoce pisos, inquilinos, gastos, cobros y reservas y los crea.</span>
+          <input type="file" accept=".xlsx,.xls,.ods,.csv,.numbers,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-import="xlsx" hidden>
         </label>
         <label class="welcome-opt">
           <strong>Restaurar una copia</strong>
@@ -590,8 +591,8 @@ async function importar(input) {
     });
     return;
   }
-  if (tipo === 'xlsx' || /\.xlsx$/i.test(file.name)) {
-    await importarExcel(file);
+  if (tipo === 'xlsx' || /\.(xlsx|xls|ods)$/i.test(file.name)) {
+    await importarArchivo(file);
     return;
   }
   if (tipo === 'json' && /\.zip$/i.test(file.name)) {

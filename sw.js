@@ -1,9 +1,9 @@
 // Service worker: la app funciona sin conexión (caché de la carcasa, red primero para actualizarse).
-const CACHE = 'alquileres-v2.3.1';
+const CACHE = 'alquileres-v2.4.0';
 const ARCHIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/calc.js', 'js/store.js', 'js/state.js', 'js/ui.js', 'js/forms.js', 'js/csv.js', 'js/demo.js',
-  'js/views/panel.js', 'js/views/cobros.js', 'js/views/pisos.js', 'js/views/gastos.js', 'js/views/calendario.js', 'js/views/fiscal.js', 'js/views/ajustes.js', 'js/building.js', 'js/motion.js', 'js/docs.js', 'js/adjuntos.js', 'js/xlsx.js', 'js/excel.js', 'css/escena.css',
+  'js/views/panel.js', 'js/views/cobros.js', 'js/views/pisos.js', 'js/views/gastos.js', 'js/views/calendario.js', 'js/views/fiscal.js', 'js/views/ajustes.js', 'js/building.js', 'js/motion.js', 'js/docs.js', 'js/adjuntos.js', 'js/xlsx.js', 'js/excel.js', 'js/importar-libre.js', 'css/escena.css',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 

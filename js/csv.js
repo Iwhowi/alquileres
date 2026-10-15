@@ -19,9 +19,18 @@ export function aCSV(filas, cols) {
 
 /** Parsea CSV con «;» o «,» (detectado en la cabecera) y comillas. Devuelve objetos por cabecera normalizada. */
 export function deCSV(texto) {
+  const [cab, ...resto] = filasCSV(texto).filter((f) => f.some((c) => c.trim() !== ''));
+  if (!cab) return [];
+  const claves = cab.map(normalizar);
+  return resto.map((f) => Object.fromEntries(claves.map((k, i) => [k, (f[i] ?? '').trim()])));
+}
+
+/** CSV → filas de texto. Separador «;», «,» o tabulador, detectado en las primeras líneas. */
+export function filasCSV(texto) {
   const t = texto.replace(/^﻿/, '');
-  const primera = t.split(/\r?\n/, 1)[0] || '';
-  const sep = (primera.match(/;/g) || []).length >= (primera.match(/,/g) || []).length ? ';' : ',';
+  const muestra = t.split(/\r?\n/, 5).join('\n');
+  const cuenta = (c) => (muestra.match(new RegExp(c === '\t' ? '\t' : `\\${c}`, 'g')) || []).length;
+  const sep = ['\t', ';', ','].reduce((a, c) => (cuenta(c) > cuenta(a) ? c : a), ';');
   const filas = [];
   let fila = [];
   let campo = '';
@@ -40,10 +49,7 @@ export function deCSV(texto) {
     } else campo += ch;
   }
   if (campo !== '' || fila.length) { fila.push(campo); filas.push(fila); }
-  const [cab, ...resto] = filas.filter((f) => f.some((c) => c.trim() !== ''));
-  if (!cab) return [];
-  const claves = cab.map(normalizar);
-  return resto.map((f) => Object.fromEntries(claves.map((k, i) => [k, (f[i] ?? '').trim()])));
+  return filas;
 }
 
 export function normalizar(s) {
