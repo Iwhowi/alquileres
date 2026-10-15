@@ -12,11 +12,12 @@ import { vistaCalendario } from './views/calendario.js';
 import { vistaFiscal, calculoFiscal } from './views/fiscal.js';
 import { vistaAjustes } from './views/ajustes.js';
 import * as F from './forms.js';
+import { descargarExcel, importarExcel, deshacerImportacion } from './excel.js';
 import { guardarArchivo, leerBlob, ponerBlob, crearZip, leerZip, extension, urlDe } from './docs.js';
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.2.0';
+app.version = '2.3.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -158,6 +159,11 @@ function renderBienvenida() {
           <span>Explora la app con inquilinos, reservas e impagos ficticios. Podrás borrarlos después.</span>
         </button>
         <label class="welcome-opt">
+          <strong>Empezar desde un Excel</strong>
+          <span>Importa un .xlsx con tus pisos, contratos, gastos y pagos. Descarga la plantilla en Ajustes → Excel.</span>
+          <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-import="xlsx" hidden>
+        </label>
+        <label class="welcome-opt">
           <strong>Restaurar una copia</strong>
           <span>Importa un archivo JSON exportado desde otro dispositivo.</span>
           <input type="file" accept=".json,application/json" data-import="json" hidden>
@@ -272,6 +278,8 @@ const acciones = {
   'editar-reserva': (el) => F.formReserva(el.dataset.id),
   'plantillas-defecto': () => { app.s.ajustes.plantillas = { ...PLANTILLAS }; commit('Textos restaurados'); },
   'exportar-json': () => exportarJSON(),
+  'excel-exportar': () => descargarExcel(),
+  'excel-deshacer': () => deshacerImportacion(),
   'exportar-csv': (el) => exportarCSV(el.dataset.tabla),
   'exportar-fiscal': () => exportarFiscal(),
   'menu-mas': () => {
@@ -573,6 +581,10 @@ async function importar(input) {
   input.value = '';
   if (!file) return;
   const tipo = input.dataset.import;
+  if (tipo === 'xlsx' || /\.xlsx$/i.test(file.name)) {
+    await importarExcel(file);
+    return;
+  }
   if (tipo === 'json' && /\.zip$/i.test(file.name)) {
     try { await importarZip(file); } catch (err) { console.error(err); toast(`No se ha podido restaurar: ${err.message}`, { tipo: 'error', ms: 7000 }); }
     return;

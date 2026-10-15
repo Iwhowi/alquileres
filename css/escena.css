@@ -545,3 +545,12 @@ dialog.visor[open] { display: flex; }
 .justif-dato strong { font-size: 19px; font-variant-numeric: tabular-nums; }
 .justif-dato .meter { margin-top: 4px; }
 @media (max-width: 899px) { .justif-grid { grid-template-columns: 1fr 1fr; } }
+
+/* Importación desde Excel */
+.excel-card .btn-row { margin-top: 12px; }
+.import-nota { padding: 12px 14px; border-radius: 12px; background: var(--surface-2); }
+.import-borra { color: var(--neg); }
+.import-err { color: var(--warn); }
+.import-errores { margin-top: 14px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); }
+.import-errores ul { margin: 8px 0 0; padding-left: 18px; max-height: 220px; overflow: auto; }
+.import-errores li { margin: 3px 0; }

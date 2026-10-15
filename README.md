@@ -30,7 +30,8 @@ La pantalla de bienvenida ofrece:
 1. **Empezar con mi cartera**: crea 2 titulares (tú y tu sociedad) y los 6 pisos vacíos:
    2 tradicionales, 1 por habitaciones y 1 turístico a tu nombre; 2 por habitaciones de la sociedad.
 2. **Ver con datos de ejemplo**: datos ficticios para explorar; se quitan desde Ajustes.
-3. **Restaurar una copia** JSON exportada desde otro dispositivo.
+3. **Empezar desde un Excel**: importa un `.xlsx` con tus pisos, contratos, gastos y pagos.
+4. **Restaurar una copia** JSON exportada desde otro dispositivo.
 
 Después, en cada piso: datos (precio de compra, valor de construcción, reducción IRPF), contratos
 por habitación o vivienda, hipoteca y gastos fijos (comunidad, IBI, seguro, suministros).
@@ -47,7 +48,7 @@ por habitación o vivienda, hipoteca y gastos fijos (comunidad, IBI, seguro, sum
 | Panel | Ingresos, gastos, hipoteca, neto operativo, cash-flow y rentabilidad neta anualizada por piso, por titular y total; gráfico de 12 meses; ocupación del turístico. |
 | Calendario | Ocupación del turístico con entradas y salidas, canal, ocupación, precio medio y RevPAR. |
 | Fiscal | Rendimiento del capital inmobiliario por piso (IRPF, modelo 100) con límite de intereses + reparación y reducción por vivienda; resultado para el Impuesto de Sociedades. Exportación CSV para el asesor. |
-| Datos | Copia completa en JSON (exportar / restaurar), CSV de cobros, gastos, reservas, contratos, resumen mensual e hipotecas; importación de gastos y reservas desde CSV. |
+| Datos | Copia completa en JSON (exportar / restaurar), CSV de cobros, gastos, reservas, contratos, resumen mensual e hipotecas; importación de gastos y reservas desde CSV. Excel editable con todos los datos (exportar e importar). |
 
 ### Definiciones
 
@@ -72,6 +73,28 @@ de lo que falta. Conserva los justificantes al menos 4 años.
 
 La copia JSON no incluye los archivos: para pasarlos a otro dispositivo usa **Ajustes → Copia con
 documentos (ZIP)** y restáurala con «Restaurar copia».
+
+## Gestionar todo desde Excel
+
+**Ajustes → Gestionar todo desde Excel → Descargar Excel con mis datos** genera un libro con una
+hoja por tipo de dato: Titulares, Pisos, Habitaciones, Contratos, Hipotecas, Gastos fijos, Gastos,
+Cobros, Reservas y Ajustes, más una hoja LEEME con las instrucciones. Las columnas de piso,
+titular, modalidad, categoría, canal y sí/no tienen desplegables.
+
+Edítalo en Excel, Numbers o Google Sheets y vuelve a importarlo con **Importar Excel**:
+
+- Fila con **ID** → se actualiza ese registro (no cambies el ID).
+- Fila **sin ID** → se crea (un piso nuevo, un contrato, un gasto, un pago, una reserva…).
+- Columna **Borrar = sí** → se elimina. Los recibos automáticos se anulan y los apuntes de gastos
+  fijos se omiten, para que no vuelvan a generarse.
+- **Celda vacía** → no cambia nada. Para vaciar un campo escribe `-`.
+- Pisos, titulares y habitaciones se indican por su nombre; un titular que no existe se crea.
+- Fechas en `dd/mm/aaaa` o fecha de Excel; meses en `aaaa-mm`; importes con coma o punto.
+
+Antes de aplicar se muestra un resumen por hoja (nuevos, cambiados, borrados y filas con error, que
+no se importan). Los datos anteriores se guardan y **Deshacer última importación** los recupera.
+También sirve un Excel hecho a mano: basta con hojas que se llamen como las de la app y una fila
+de cabecera con sus títulos (Nombre, Piso, Fecha, Importe…).
 
 ## Sincronizar móvil y Mac
 
