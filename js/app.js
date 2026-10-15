@@ -161,7 +161,7 @@ function renderBienvenida() {
         <label class="welcome-opt">
           <strong>Empezar desde un Excel</strong>
           <span>Importa un .xlsx con tus pisos, contratos, gastos y pagos. Descarga la plantilla en Ajustes → Excel.</span>
-          <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-import="xlsx" hidden>
+          <input type="file" accept=".xlsx,.numbers,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-import="xlsx" hidden>
         </label>
         <label class="welcome-opt">
           <strong>Restaurar una copia</strong>
@@ -581,6 +581,15 @@ async function importar(input) {
   input.value = '';
   if (!file) return;
   const tipo = input.dataset.import;
+  if (/\.numbers$/i.test(file.name)) {
+    abrirDialogo({
+      titulo: 'Archivo de Numbers',
+      cuerpo: html`<p class="muted">«${file.name}» está en el formato propio de Numbers, que solo entiende Numbers. Pásalo a Excel en dos clics y vuelve a importarlo:</p>
+        <ol class="steps"><li>En Numbers, abre el archivo.</li><li>Menú <b>Archivo → Exportar a → Excel…</b> y pulsa <b>Siguiente</b> y <b>Exportar</b>.</li><li>Aquí, pulsa <b>Importar Excel</b> y elige el archivo <b>.xlsx</b> que acabas de crear.</li></ol>
+        <p class="small muted">En iPhone o iPad: en Numbers, botón ··· → Exportar → Excel → Guardar en Archivos.</p>`,
+    });
+    return;
+  }
   if (tipo === 'xlsx' || /\.xlsx$/i.test(file.name)) {
     await importarExcel(file);
     return;

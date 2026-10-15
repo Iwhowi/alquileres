@@ -44,7 +44,7 @@ export function vistaAjustes() {
       </ul>
       <div class="btn-row">
         <button class="btn btn-primary" data-action="excel-exportar">${raw(ICON.download)}<span>Descargar Excel con mis datos</span></button>
-        <label class="btn">${raw(ICON.upload)}<span>Importar Excel</span><input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-import="xlsx" hidden></label>
+        <label class="btn">${raw(ICON.upload)}<span>Importar Excel</span><input type="file" accept=".xlsx,.numbers,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-import="xlsx" hidden></label>
         ${hayDeshacer() ? html`<button class="btn btn-ghost" data-action="excel-deshacer">Deshacer última importación</button>` : ''}
       </div>
     </section>
