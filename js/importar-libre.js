@@ -352,6 +352,118 @@ function puntuaNombre(nombre, tipo) {
   return TIPOS[tipo].kw.some((k) => t.includes(k)) ? 1 : 0;
 }
 
+/**
+ * Una hoja puede tener varias tablas (una debajo de otra o una al lado de otra, separadas por filas o
+ * columnas vacías, cada una con su título: «INQUILINOS», «GASTOS»…). Se separan y se analizan por
+ * separado. Los trozos sin cabecera que siguen a una tabla (p. ej. tras una fila en blanco) son parte
+ * de ella; un texto suelto encima de una tabla es su título.
+ */
+/** Dentro de un bloque sin filas vacías, una nueva fila de títulos (Fecha, Concepto, Importe…) empieza otra tabla. */
+function partirPorCabeceras(filas) {
+  const cab = buscarCabecera(filas);
+  if (cab < 0) return [{ filas, titulo: '' }];
+  const esTit = (f) => { const ll = (f || []).filter((c) => !vacio(c)); return ll.length === 1 && typeof ll[0] === 'string' && !Number.isFinite(numL(ll[0])); };
+  const pareceCab = (f) => {
+    const ll = (f || []).filter((c) => !vacio(c));
+    const tx = ll.filter((c) => typeof c === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(c) && !Number.isFinite(numL(c)));
+    // Una cabecera de verdad: solo textos sin cifras y al menos dos títulos claros (Fecha, Importe…)
+    if (ll.length < 2 || tx.length !== ll.length || tx.some((c) => /\d/.test(c))) return false;
+    const fuertes = tx.filter((c) => Object.keys(CAMPOS).some((k) => puntuaTitulo(c, k) >= 3)).length;
+    const medios = tx.filter((c) => Object.keys(CAMPOS).some((k) => puntuaTitulo(c, k) >= 2.2)).length;
+    return fuertes >= 2 || medios >= 3;
+  };
+  for (let r = cab + 2; r < filas.length - 1; r++) {
+    if (!pareceCab(filas[r]) || !(filas[r + 1] || []).some((c) => !vacio(c))) continue;
+    // ¿Las columnas de esta fila son distintas de la cabecera actual? (si es igual, es una cabecera repetida)
+    if (normalizar(filas[r].join('|')) === normalizar(filas[cab].join('|'))) continue;
+    const corte = esTit(filas[r - 1]) ? r - 1 : r;
+    const titulo = corte < r ? texto(filas[r - 1].find((c) => !vacio(c))) : '';
+    const resto = partirPorCabeceras(filas.slice(corte));
+    if (titulo && resto[0]) resto[0].titulo ||= titulo;
+    return [{ filas: filas.slice(0, corte), titulo: '' }, ...resto];
+  }
+  return [{ filas, titulo: '' }];
+}
+
+function separarTablas(nombre, filas) {
+  const lista = separarBloques(nombre, filas);
+  const out = [];
+  for (const t of lista) {
+    const partes = partirPorCabeceras(t.filas);
+    if (partes.length === 1) { out.push(t); continue; }
+    partes.forEach((p, i) => out.push({ nombre: `${nombre} · ${p.titulo || (i === 0 && t.titulo) || `tabla ${out.length + 1}`}`, base: nombre, titulo: p.titulo || (i === 0 ? t.titulo : ''), filas: p.filas }));
+  }
+  return out;
+}
+
+function separarBloques(nombre, filas) {
+  const filaVacia = (f) => !f || f.every(vacio);
+  const bandas = [];
+  for (let r = 0, ini = -1; r <= filas.length; r++) {
+    const v = r === filas.length || filaVacia(filas[r]);
+    if (!v && ini < 0) ini = r;
+    if (v && ini >= 0) { bandas.push([ini, r - 1]); ini = -1; }
+  }
+  const bloques = [];
+  for (const [r0, r1] of bandas) {
+    const rs = filas.slice(r0, r1 + 1);
+    const ancho = Math.max(...rs.map((f) => f.length));
+    const enBanda = [];
+    for (let c = 0, c0 = -1; c <= ancho; c++) {
+      const v = c === ancho || rs.every((f) => vacio(f[c]));
+      if (!v && c0 < 0) c0 = c;
+      if (v && c0 >= 0) { enBanda.push({ r0, r1, c0, c1: c - 1 }); c0 = -1; }
+    }
+    // Una columna vacía dentro de una tabla no la parte: se unen los trozos que ocupan las mismas filas
+    const filasDe = (b) => new Set(rs.map((f, i) => (f.slice(b.c0, b.c1 + 1).some((c) => !vacio(c)) ? i : -1)).filter((i) => i >= 0));
+    for (let i = 1; i < enBanda.length; i++) {
+      const a2 = enBanda[i - 1]; const b2 = enBanda[i];
+      const fa = filasDe(a2); const fb = filasDe(b2);
+      const comunes = [...fa].filter((x) => fb.has(x)).length;
+      if (b2.c0 - a2.c1 <= 3 && comunes / Math.max(fa.size, fb.size) >= 0.75) { a2.c1 = b2.c1; enBanda.splice(i, 1); i--; }
+    }
+    bloques.push(...enBanda);
+  }
+  if (bloques.length <= 1) return [{ nombre, base: nombre, titulo: '', filas }];
+  const sub = (b) => filas.slice(b.r0, b.r1 + 1).map((f) => f.slice(b.c0, b.c1 + 1));
+  for (const b of bloques) {
+    const g = sub(b);
+    const llenas = g.flat().filter((c) => !vacio(c));
+    const textos = llenas.filter((c) => typeof c === 'string' && !Number.isFinite(numL(c)) && !/^\d{4}-\d{2}-\d{2}$/.test(c));
+    b.n = llenas.length;
+    b.tipo = buscarCabecera(g) >= 0 ? 'tabla'
+      : g.length <= 2 && llenas.length <= 2 && textos.length === llenas.length ? 'titulo'
+        : g.length === 1 && textos.length >= 2 && textos.length === llenas.length ? 'cabecera' : 'datos';
+  }
+  const solapa = (a, b) => a.c0 <= b.c1 && b.c0 <= a.c1;
+  const tablas = [];
+  for (const b of bloques) {
+    if (b.tipo === 'datos') {
+      // Continuación de la tabla de encima (misma zona de columnas)
+      const prev = [...tablas].reverse().find((t) => t.tipo !== 'titulo' && solapa(t, b) && t.r1 < b.r0);
+      if (prev) { prev.partes.push(b); prev.r1 = b.r1; if (prev.tipo === 'cabecera') prev.tipo = 'tabla'; continue; }
+    }
+    tablas.push({ ...b, partes: [b], titulo: '' });
+  }
+  // Títulos: se asignan a la tabla que tienen justo debajo
+  for (const t of tablas.filter((x) => x.tipo === 'titulo')) {
+    const destino = tablas.filter((x) => x.tipo !== 'titulo' && x.r0 > t.r1 && solapa(x, t)).sort((a, b) => a.r0 - b.r0)[0];
+    if (destino && !destino.titulo) destino.titulo = sub(t).flat().filter((c) => !vacio(c)).join(' ');
+  }
+  const reales = tablas.filter((x) => (x.tipo === 'tabla' || x.tipo === 'cabecera') || (x.tipo === 'datos' && x.n > 3));
+  if (reales.length <= 1) return [{ nombre, base: nombre, titulo: reales[0]?.titulo || '', filas }];
+  return reales.map((t, i) => {
+    const c0 = Math.min(...t.partes.map((p) => p.c0)); const c1 = Math.max(...t.partes.map((p) => p.c1));
+    const g = [];
+    for (const p of t.partes) for (let r = p.r0; r <= p.r1; r++) {
+      const fila = Array(c1 - c0 + 1).fill('');
+      for (let c = p.c0; c <= p.c1; c++) fila[c - c0] = filas[r]?.[c] ?? '';
+      g.push(fila);
+    }
+    return { nombre: `${nombre} · ${t.titulo || `tabla ${i + 1}`}`, base: nombre, titulo: t.titulo, filas: g };
+  });
+}
+
 /** Analiza todas las hojas y propone cómo importarlas. */
 export function analizar(libro, s) {
   const hojas = [];
@@ -362,14 +474,27 @@ export function analizar(libro, s) {
     if (y) anios[y] = (anios[y] || 0) + 1;
   }
   const anioLibro = Object.entries(anios).sort((a, b) => b[1] - a[1])[0]?.[0] || String(new Date().getFullYear());
-  for (const [nombre, filasBrutas] of Object.entries(libro)) {
+  const trozos = [];
+  for (const [nombreHoja, filasBrutas] of Object.entries(libro)) {
     // Array.from: las filas y celdas vacías pueden venir como huecos
-    const filas = Array.from(filasBrutas || [], (f) => Array.from(f || [], (v) => (v == null ? '' : typeof v === 'string' ? v.trim() : v)));
-    if (!filas.some((f) => f.some((c) => !vacio(c)))) continue;
-    if (['listas', 'leeme', 'instrucciones'].includes(normalizar(nombre))) continue;
+    const filasHoja = Array.from(filasBrutas || [], (f) => Array.from(f || [], (v) => (v == null ? '' : typeof v === 'string' ? v.trim() : v)));
+    if (!filasHoja.some((f) => f.some((c) => !vacio(c)))) continue;
+    if (['listas', 'leeme', 'instrucciones'].includes(normalizar(nombreHoja))) continue;
+    trozos.push(...separarTablas(nombreHoja, filasHoja));
+  }
+  for (const trozo of trozos) {
+    const { filas } = trozo;
     const cab = buscarCabecera(filas);
-    const h = { nombre, filas, cab, columnas: [], datos: [], tipo: 'ignorar', map: {}, pisoDefecto: '', anio: anioLibro, modo: 'auto', etiquetas: 'auto' };
-    // Año: en el nombre de la hoja o en las primeras filas
+    // Título: el de encima de la tabla, o los textos sueltos antes de la cabecera
+    const tituloDentro = cab > 0 ? filas.slice(0, cab).map((f) => f.filter((c) => !vacio(c))).filter((f) => f.length <= 2).flat().join(' ') : '';
+    const titulo = tituloDentro || trozo.titulo;
+    const nombre = `${titulo} ${trozo.base}`.trim(); // pistas para saber qué contiene
+    // «Piso Luna 8 - cuentas 2025» → «Piso Luna 8»
+    const limpiar = (x) => texto(x).replace(/\s*[-–—:|(]\s*(cuentas|gastos|ingresos|resumen|cobros|alquiler(es)?|movimientos|año|ano|ejercicio|20\d{2}).*$/i, '').replace(/\s+(20\d{2})$/, '').trim();
+    const pisoNombre = [titulo, trozo.base].map(limpiar).find((x) => x && hojaEsPiso(x)) || '';
+    const nombreVisible = trozo.nombre === trozo.base ? trozo.base : `${trozo.base} · ${tituloDentro || trozo.titulo || trozo.nombre.split(' · ')[1]}`;
+    const h = { nombre: nombreVisible, hojaBase: trozo.base, titulo, pista: nombre, pisoNombre, filas, cab, columnas: [], datos: [], tipo: 'ignorar', map: {}, pisoDefecto: '', anio: anioLibro, modo: 'auto', etiquetas: 'auto' };
+    // Año: en el nombre de la hoja, el título o las primeras filas
     const anio = [nombre, ...filas.slice(0, Math.max(1, cab + 1)).flat()].map((x) => String(x).match(/\b(20\d{2})\b/)?.[1]).find(Boolean);
     if (anio) h.anio = anio;
     const construir = () => {
@@ -387,7 +512,9 @@ export function analizar(libro, s) {
       // Tabla girada: meses en las filas (primera columna) y pisos o conceptos en las columnas
       // (solo con nombres de mes, no fechas completas, y un mes distinto por fila)
       const mesesFila = h.datos.map((f) => (typeof f[0] === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(f[0]) ? mesDeCelda(f[0], h.anio) : null)).filter(Boolean);
-      const enFilas = new Set(mesesFila).size === mesesFila.length ? mesesFila.length : 0;
+      const filasMes = h.datos.filter((f) => typeof f[0] === 'string' && mesDeCelda(f[0], h.anio));
+      const matriz = filasMes.every((f) => f.slice(1).filter((c) => !vacio(c) && !Number.isFinite(numL(c))).length === 0);
+      const enFilas = matriz && new Set(mesesFila).size === mesesFila.length ? mesesFila.length : 0;
       if (colMeses < 3 && enFilas >= 3 && enFilas >= h.datos.filter((f) => !esTotal(texto(f[0]))).length * 0.6) {
         const tabla = [filas[cab], ...h.datos];
         const ancho2 = Math.max(...tabla.map((f) => f.length));
@@ -426,7 +553,7 @@ export function analizar(libro, s) {
   const clave = (nombre) => (s?.pisos || []).find((p) => mismoPiso(p.nombre, nombre))?.id || `nuevo:${nombre}`;
   const turisticos = [...new Set([
     ...(s?.pisos || []).filter((p) => p.modalidad === 'turistico').map((p) => p.id),
-    ...hojas.filter((h) => hojaEsPiso(h.nombre) && h.datos.some((f) => f.some((c) => typeof c === 'string' && /airbnb|booking|reserva|huesped|turist/.test(normalizar(c))))).map((h) => clave(h.nombre)),
+    ...hojas.filter((h) => h.pisoNombre && h.datos.some((f) => f.some((c) => typeof c === 'string' && /airbnb|booking|reserva|huesped|turist/.test(normalizar(c))))).map((h) => clave(h.pisoNombre)),
   ])];
   for (const h of hojas) {
     // Columna de piso con un único piso: las filas que lo dejan vacío son de ese piso
@@ -437,7 +564,7 @@ export function analizar(libro, s) {
     }
     const necesita = h.tipo === 'meses' || (TIPOS[h.tipo] && h.tipo !== 'pisos' && !('piso' in h.map));
     if (!necesita) continue;
-    if (hojaEsPiso(h.nombre)) h.pisoDefecto = clave(h.nombre);
+    if (h.pisoNombre) h.pisoDefecto = clave(h.pisoNombre);
     else if (h.tipo === 'reservas' && turisticos.length === 1) h.pisoDefecto = turisticos[0];
     else if (s?.pisos?.length === 1) h.pisoDefecto = s.pisos[0].id;
   }
@@ -465,7 +592,7 @@ function filasSonPisos(h, conocidos) {
 function nombresCrudos(hojas, s) {
   const lista = [];
   const add = (n) => { const t = separarHab(n).piso; if (t && !esTotal(t) && !lista.some((x) => normalizar(x) === normalizar(t))) lista.push(t); };
-  const conocidos = [...(s?.pisos || []).map((p) => p.nombre), ...hojas.filter((x) => hojaEsPiso(x.nombre)).map((x) => x.nombre)];
+  const conocidos = [...(s?.pisos || []).map((p) => p.nombre), ...hojas.filter((x) => x.pisoNombre).map((x) => x.pisoNombre)];
   for (const h of hojas) {
     if (h.tipo === 'ignorar') continue;
     if (h.tipo === 'meses' && filasSonPisos(h, conocidos)) { const { etiquetaDe, cols } = columnasMeses(h); for (const f of h.datos) if (cols.some((c) => !vacio(f[c.i]))) add(etiquetaDe(f)); continue; }
@@ -525,10 +652,22 @@ function convertir(hojas, s, asignacion = new Map()) {
     return { nombre: n.nombre, nuevo: n };
   };
   for (const h of hojas) for (const n of nombresCrudos([h], s)) crudoDe.set(normalizar(n), n);
+  const candidatos = [...(s.pisos || []).map((p) => p.nombre), ...crudoDe.values()];
+  /** Piso nombrado dentro de un texto: «RECIBO COMUNIDAD MAYOR 12», «Luz Ático». Solo si es uno y claro. */
+  const pisoPorTexto = (txt) => {
+    const tt = tokens(txt);
+    if (!tt.length) return null;
+    const hits = [...new Set(candidatos.filter((n) => {
+      const tn = tokens(n);
+      const nums = tn.filter((x) => /\d/.test(x)); const pal = tn.filter((x) => !/\d/.test(x) && x.length >= 4);
+      return pal.some((x) => tt.includes(x)) && nums.every((x) => tt.includes(x));
+    }).map((n) => resolverPiso(n)?.nombre))];
+    return hits.length === 1 ? resolverPiso(hits[0]) : null;
+  };
   const pisoDe = (h, f) => {
     if ('piso' in h.map && !vacio(f[h.map.piso])) return { ...resolverPiso(f[h.map.piso]), hab: separarHab(f[h.map.piso]).hab };
     const d = h.pisoDefecto;
-    if (!d) return resolverPiso('Piso sin asignar');
+    if (!d) return pisoPorTexto(`${f.filter((c) => typeof c === 'string').join(' ')} ${h.titulo || ''}`) || resolverPiso('Piso sin asignar');
     if (d.startsWith('nuevo:')) return resolverPiso(d.slice(6));
     const p = s.pisos.find((x) => x.id === d);
     return p ? { nombre: p.nombre, existente: p } : resolverPiso('Piso sin asignar');
@@ -634,7 +773,7 @@ function convertir(hojas, s, asignacion = new Map()) {
           const est = 'estado' in h.map ? estadoDe(v(h, f, 'estado')) : null;
           const importe = Number.isFinite(imp) ? r2(Math.abs(imp)) : 0;
           const cobrado = 'cobrado' in h.map && Number.isFinite(n('cobrado')) ? n('cobrado') : est === false ? 0 : est === true || entrada <= hoy ? importe : 0;
-          const pista = `${h.nombre} ${h.archivo || ''} ${h.columnas.map((c) => c.titulo).join(' ')}`;
+          const pista = `${h.pista} ${h.archivo || ''} ${h.columnas.map((c) => c.titulo).join(' ')}`;
           const canal = texto(v(h, f, 'canal')) || (/airbnb/i.test(pista) ? 'Airbnb' : /booking/i.test(pista) ? 'Booking' : '');
           const cancelada = f.some((c) => typeof c === 'string' && /^(cancel|anulad)/.test(normalizar(c)));
           out.reservas.push({ Piso: p.nombre, Huésped: texto(v(h, f, 'huesped')) || 'Huésped', Teléfono: texto(v(h, f, 'telefono')), Canal: canal ? canalDe(/airbnb/i.test(canal) ? 'Airbnb' : /booking/i.test(canal) ? 'Booking' : /direct|particular|whats|telef/i.test(canal) ? 'Directo' : canal) : '', Entrada: entrada, Salida: salida, Huéspedes: Number.isFinite(n('huespedes')) ? n('huespedes') : '', 'Importe total': importe, Comisión: Number.isFinite(n('comision')) ? r2(Math.abs(n('comision'))) : '', Cobrado: cancelada ? 0 : r2(cobrado), Cancelada: cancelada ? 'sí' : '', Notas: texto(v(h, f, 'notas')) });
@@ -706,7 +845,7 @@ function convertir(hojas, s, asignacion = new Map()) {
 
   function convertirMeses(h) {
     const { cols, etiquetaDe } = columnasMeses(h);
-    const sonPisos = filasSonPisos(h, [...(s.pisos || []).map((p) => p.nombre), ...nuevos.map((n) => n.nombre), ...hojas.filter((x) => hojaEsPiso(x.nombre)).map((x) => x.nombre)]);
+    const sonPisos = filasSonPisos(h, [...(s.pisos || []).map((p) => p.nombre), ...nuevos.map((n) => n.nombre), ...hojas.filter((x) => x.pisoNombre).map((x) => x.pisoNombre)]);
     let seccion = h.modo === 'auto' ? null : h.modo;
     for (const f of h.datos) {
       const et = etiquetaDe(f);
@@ -716,14 +855,14 @@ function convertir(hojas, s, asignacion = new Map()) {
         continue;
       }
       if (!et || esTotal(et)) continue;
-      const p = sonPisos ? resolverPiso(et) : pisoDe(h, f);
+      const p = sonPisos ? resolverPiso(et) : (!h.pisoDefecto && pisoPorTexto(et)) || pisoDe(h, f);
       if (!p) continue;
       for (const c of cols) {
         const x = numL(f[c.i] ?? '');
         if (!Number.isFinite(x) || !x) continue;
         const fecha = `${c.mes}-01`;
-        const esIng = h.modo === 'ingresos' || (h.modo !== 'gastos' && (seccion === 'ingresos' || (!seccion && (sonPisos ? x > 0 && esIngresoTexto(h.nombre) : esIngresoTexto(et)))));
-        const concepto = sonPisos ? (esIng ? '' : h.nombre) : et;
+        const esIng = h.modo === 'ingresos' || (h.modo !== 'gastos' && (seccion === 'ingresos' || (!seccion && (sonPisos ? x > 0 && esIngresoTexto(h.pista) : esIngresoTexto(et)))));
+        const concepto = sonPisos ? (esIng ? '' : h.titulo || h.hojaBase) : et;
         if (esIng && x > 0) {
           if (p.nuevo && /airbnb|booking|reserva|huesped|turist/.test(normalizar(et))) p.nuevo.turistico = true;
           cobro(p, fecha, c.mes, x, '', concepto, true);
@@ -811,7 +950,7 @@ function opcionesPiso(h, s, detectados) {
   const ops = [];
   for (const p of s?.pisos || []) ops.push([p.id, p.nombre]);
   for (const n of detectados) if (!ops.some(([, t]) => t === n)) ops.push([`nuevo:${n}`, `${n} (nuevo)`]);
-  if (hojaEsPiso(h.nombre) && !ops.some(([k]) => k === `nuevo:${h.nombre}`) && !(s?.pisos || []).some((p) => p.id === sel)) ops.push([`nuevo:${h.nombre}`, `${h.nombre} (nuevo)`]);
+  if (h.pisoNombre && !ops.some(([k]) => k === `nuevo:${h.pisoNombre}`) && !(s?.pisos || []).some((p) => p.id === sel)) ops.push([`nuevo:${h.pisoNombre}`, `${h.pisoNombre} (nuevo)`]);
   ops.push(['', 'Crear «Piso sin asignar»']);
   return ops.map(([k, t]) => html`<option value="${k}" ${k === sel ? 'selected' : ''}>${t}</option>`);
 }

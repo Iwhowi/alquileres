@@ -83,6 +83,10 @@ documentos (ZIP)** y restáurala con «Restaurar copia».
   con importes positivos y negativos o columnas Debe/Haber), reservas turísticas, inquilinos o
   contratos, pisos, hipotecas, o una **tabla por meses** (conceptos o pisos en filas y Enero, Febrero…
   en columnas, con secciones INGRESOS / GASTOS).
+- **Varias tablas en una misma hoja**: una debajo de otra o una al lado de otra (separadas por filas
+  o columnas vacías, o por una nueva fila de títulos), cada una con su título («INQUILINOS»,
+  «GASTOS 2025»…). Se separan y cada tabla se trata por su cuenta. En Numbers se leen todas las
+  tablas de cada hoja.
 - **Qué es cada columna**, por su título (Fecha, F. valor, Inmueble, Vivienda, Descripción, Total (€),
   Alquiler €/mes, Llegada, Check-in, Móvil…, también en inglés) y por sus valores (fechas, importes,
   sí/no). La cabecera puede estar en cualquier fila; las filas de totales se ignoran.
