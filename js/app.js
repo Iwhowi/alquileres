@@ -18,7 +18,7 @@ import { guardarArchivo, leerBlob, ponerBlob, crearZip, leerZip, extension, urlD
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.4.0';
+app.version = '2.5.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -161,7 +161,7 @@ function renderBienvenida() {
         </button>
         <label class="welcome-opt">
           <strong>Empezar desde mi Excel</strong>
-          <span>Sube la hoja de cálculo que ya usabas (Excel, CSV…), con el formato que tenga: la app reconoce pisos, inquilinos, gastos, cobros y reservas y los crea.</span>
+          <span>Sube la hoja de cálculo que ya usabas (Excel, Numbers, CSV…), con el formato que tenga: la app reconoce pisos, inquilinos, gastos, cobros y reservas y los crea.</span>
           <input type="file" accept=".xlsx,.xls,.ods,.csv,.numbers,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-import="xlsx" hidden>
         </label>
         <label class="welcome-opt">
@@ -582,16 +582,7 @@ async function importar(input) {
   input.value = '';
   if (!file) return;
   const tipo = input.dataset.import;
-  if (/\.numbers$/i.test(file.name)) {
-    abrirDialogo({
-      titulo: 'Archivo de Numbers',
-      cuerpo: html`<p class="muted">«${file.name}» está en el formato propio de Numbers, que solo entiende Numbers. Pásalo a Excel en dos clics y vuelve a importarlo:</p>
-        <ol class="steps"><li>En Numbers, abre el archivo.</li><li>Menú <b>Archivo → Exportar a → Excel…</b> y pulsa <b>Siguiente</b> y <b>Exportar</b>.</li><li>Aquí, pulsa <b>Importar Excel</b> y elige el archivo <b>.xlsx</b> que acabas de crear.</li></ol>
-        <p class="small muted">En iPhone o iPad: en Numbers, botón ··· → Exportar → Excel → Guardar en Archivos.</p>`,
-    });
-    return;
-  }
-  if (tipo === 'xlsx' || /\.(xlsx|xls|ods)$/i.test(file.name)) {
+  if (tipo === 'xlsx' || /\.(xlsx|xls|ods|numbers)$/i.test(file.name)) {
     await importarArchivo(file);
     return;
   }

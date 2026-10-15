@@ -76,8 +76,8 @@ documentos (ZIP)** y restáurala con «Restaurar copia».
 
 ## Importar tu propio Excel (cualquier formato)
 
-**Ajustes → Importar mi Excel** (o «Empezar desde mi Excel» en la bienvenida) acepta `.xlsx`, `.ods` y
-`.csv` hechos por cualquiera, sin plantilla. Un asistente analiza cada hoja:
+**Ajustes → Importar mi Excel** (o «Empezar desde mi Excel» en la bienvenida) acepta `.xlsx`,
+`.numbers` (Apple Numbers), `.ods` y `.csv` hechos por cualquiera, sin plantilla. Un asistente analiza cada hoja:
 
 - **Qué contiene**: gastos, ingresos o cobros de alquiler, movimientos mezclados (extracto del banco,
   con importes positivos y negativos o columnas Debe/Haber), reservas turísticas, inquilinos o
@@ -95,8 +95,11 @@ documentos (ZIP)** y restáurala con «Restaurar copia».
 
 Todo se puede corregir con desplegables antes de continuar. Después se ve el resumen habitual y se
 puede deshacer. Los cobros de un inquilino se enlazan a su contrato y lo que ya estaba en la app no
-se duplica, así que importar dos veces el mismo archivo no repite nada. Los archivos `.numbers`
-deben exportarse antes a Excel (Archivo → Exportar a → Excel).
+se duplica, así que importar dos veces el mismo archivo no repite nada.
+
+Los archivos de Numbers se leen con [SheetJS](https://sheetjs.com) (Apache 2.0, incluido en
+`js/vendor/`), que se carga solo al elegir un `.numbers`. Si un archivo de Numbers no se puede leer,
+la app indica cómo exportarlo a Excel.
 
 ## Gestionar todo desde Excel
 

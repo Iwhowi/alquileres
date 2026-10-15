@@ -36,7 +36,7 @@ export function vistaAjustes() {
 
     <section class="card excel-card" id="excel">
       <div class="card-head"><h2>Importar tu Excel o gestionar todo desde Excel</h2></div>
-      <p class="muted"><b>¿Ya llevabas tus pisos en una hoja de cálculo?</b> Súbela tal cual (Excel, CSV o LibreOffice, con el formato que tenga). La app reconoce qué hay en cada hoja y cada columna —pisos, inquilinos, gastos, cobros, reservas, hipotecas o tablas por meses—, te enseña lo que ha entendido para que lo corrijas y crea todo. Lo que ya tengas no se duplica ni se borra.</p>
+      <p class="muted"><b>¿Ya llevabas tus pisos en una hoja de cálculo?</b> Súbela tal cual (Excel, Numbers, CSV o LibreOffice, con el formato que tenga). La app reconoce qué hay en cada hoja y cada columna —pisos, inquilinos, gastos, cobros, reservas, hipotecas o tablas por meses—, te enseña lo que ha entendido para que lo corrijas y crea todo. Lo que ya tengas no se duplica ni se borra.</p>
       <p class="muted small">También puedes descargar un Excel con <b>todos tus datos</b>, editarlo y volver a subirlo: las filas con ID se actualizan, las nuevas se crean y las marcadas con <b>Borrar = sí</b> se eliminan.</p>
       <div class="btn-row">
         <button class="btn btn-primary" data-action="excel-exportar">${raw(ICON.download)}<span>Descargar Excel con mis datos</span></button>

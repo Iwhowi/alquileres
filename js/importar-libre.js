@@ -799,13 +799,45 @@ function esFormatoApp(libro) {
   });
 }
 
-/** Importa .xlsx, .ods o .csv: el Excel de la app directamente; cualquier otro, con el asistente. */
+/** Lee un archivo de Numbers (Apple) con SheetJS, que se carga solo cuando hace falta. */
+let sheetjs = null;
+function cargarSheetJS() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  sheetjs ||= new Promise((ok, mal) => {
+    const sc = document.createElement('script');
+    sc.src = 'js/vendor/xlsx.core.min.js';
+    sc.onload = () => ok(window.XLSX);
+    sc.onerror = () => { sheetjs = null; mal(new Error('No se ha podido cargar el lector de Numbers. Conéctate a internet una vez y vuelve a probar.')); };
+    document.head.appendChild(sc);
+  });
+  return sheetjs;
+}
+async function leerNumbers(file) {
+  const X = await cargarSheetJS();
+  let wb;
+  try { wb = X.read(new Uint8Array(await file.arrayBuffer()), { cellDates: true }); } catch (e) {
+    throw new Error('No se ha podido leer este archivo de Numbers. Ábrelo en Numbers y usa Archivo → Exportar a → Excel, y sube ese .xlsx.');
+  }
+  const iso = (d) => new Date(d.getTime() + 12 * 3600e3).toISOString().slice(0, 10); // fecha sin desfase horario
+  const libro = {};
+  for (const n of wb.SheetNames) {
+    const filas = X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '', blankrows: true });
+    libro[n] = filas.map((f) => f.map((v) => (v instanceof Date ? iso(v) : typeof v === 'boolean' ? (v ? 'sí' : 'no') : v)));
+  }
+  return libro;
+}
+
+/** Importa .xlsx, .ods, .csv o .numbers: el Excel de la app directamente; cualquier otro, con el asistente. */
 export async function importarArchivo(file) {
   try {
     const ext = (file.name.match(/\.(\w+)$/)?.[1] || '').toLowerCase();
     if (ext === 'csv' || ext === 'txt' || ext === 'tsv') {
       const filas = filasCSV(await file.text());
       return importarLibre({ [file.name.replace(/\.\w+$/, '')]: filas.map((f) => f.map((c) => c.trim())) }, file.name);
+    }
+    if (ext === 'numbers') {
+      const libro = await leerNumbers(file);
+      return esFormatoApp(libro) ? importarExcel(file, libro) : importarLibre(libro, file.name);
     }
     if (ext === 'ods') {
       const libro = await leerOds(file);
