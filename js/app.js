@@ -17,7 +17,7 @@ import { guardarArchivo, leerBlob, ponerBlob, crearZip, leerZip, extension, urlD
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.3.0';
+app.version = '2.3.1';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -699,7 +699,7 @@ function iniciar() {
   render();
   navigator.storage?.persist?.().catch(() => {});
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').then((reg) => {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing;
         nw?.addEventListener('statechange', () => {

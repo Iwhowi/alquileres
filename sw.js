@@ -1,5 +1,5 @@
 // Service worker: la app funciona sin conexión (caché de la carcasa, red primero para actualizarse).
-const CACHE = 'alquileres-v2.3.0';
+const CACHE = 'alquileres-v2.3.1';
 const ARCHIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/calc.js', 'js/store.js', 'js/state.js', 'js/ui.js', 'js/forms.js', 'js/csv.js', 'js/demo.js',
@@ -22,7 +22,8 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   // Red primero con caída a caché: siempre la última versión si hay conexión.
   e.respondWith(
-    fetch(req)
+    // «no-cache»: revalida con el servidor y no usa la caché HTTP del navegador (versión al día).
+    fetch(req.mode === 'navigate' ? req.url : req, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) {
           const copia = res.clone();
