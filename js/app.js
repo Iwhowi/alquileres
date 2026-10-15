@@ -18,7 +18,7 @@ import { guardarArchivo, leerBlob, ponerBlob, crearZip, leerZip, extension, urlD
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.5.0';
+app.version = '2.5.1';
 
 const NAV = [
   ['', 'Panel', 'panel'],

@@ -566,3 +566,4 @@ dialog.visor[open] { display: flex; }
 .libre-col small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .libre-col select { width: 100%; }
 .libre-col.field select { height: 40px; font-size: 14px; padding-top: 0; padding-bottom: 0; }
+.libre-check { display: flex; align-items: flex-start; margin-top: 12px; line-height: 1.4; }
