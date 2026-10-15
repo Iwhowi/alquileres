@@ -25,7 +25,7 @@ const fechaReal = (iso) => {
 };
 function aFecha(v) {
   if (typeof v === 'number') return v > 20000 && v < 80000 ? isoDeSerial(v + desfase1904) : null;
-  return fechaReal(fechaISO(String(v).trim()));
+  return fechaReal(fechaISO(String(v).trim().replace(/[ T]\d{1,2}:\d{2}(:\d{2})?$/, '')));
 }
 function aMes(v) {
   if (typeof v === 'number') return v > 20000 && v < 80000 ? isoDeSerial(v + desfase1904).slice(0, 7) : null;
@@ -354,7 +354,7 @@ export async function prepararImportacion(file, base = app.s) {
       let fallo = null;
       const pisoDeFila = () => {
         const i = h.cols.findIndex((c) => c[2] === 'piso');
-        return i >= 0 && !vacio(val(i)) ? buscar('pisos', val(i)) : obj ? s.pisos.find((p) => p.id === obj.pisoId) : null;
+        return i >= 0 && !vacio(val(i)) ? buscar('pisos', val(i), 'nombre', undefined, obj?.pisoId) : obj ? s.pisos.find((p) => p.id === obj.pisoId) : null;
       };
       h.cols.forEach(([titulo, prop, tipo, o = {}], i) => {
         if (fallo || tipo === 'id' || tipo === 'ro' || prop === '_borrar') return;
@@ -420,6 +420,8 @@ export async function prepararImportacion(file, base = app.s) {
           }
           case 'contrato': {
             if (obj && String(v).trim() === obj.contratoId) return; // sin cambio
+            // ID de un contrato ya eliminado (sus recibos cobrados quedan como historial): sin cambio
+            if (obj && /^[0-9a-f]{16}$/.test(String(v).trim()) && !s.contratos.some((k2) => k2.id === String(v).trim())) return;
             const p = pisoDeFila();
             const c = s.contratos.find((k2) => k2.id === String(v).trim()) || buscar('contratos', v, 'inquilino', (k2) => !p || p === AMBIGUO || k2.pisoId === p.id);
             if (c === AMBIGUO) fallo = `hay varios contratos de «${v}»; usa el ID del contrato`;
