@@ -554,3 +554,5 @@ dialog.visor[open] { display: flex; }
 .import-errores { margin-top: 14px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); }
 .import-errores ul { margin: 8px 0 0; padding-left: 18px; max-height: 220px; overflow: auto; }
 .import-errores li { margin: 3px 0; }
+.import-avisos { margin-top: 12px; padding: 10px 14px; border-radius: 12px; background: var(--warn-soft); color: var(--ink); }
+.import-avisos ul { margin: 6px 0 0; padding-left: 18px; }

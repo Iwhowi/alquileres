@@ -6,7 +6,7 @@ import { app, today, commit } from './state.js';
 import { html, raw, ICON, toast, descargar, abrirDialogo, confirmar } from './ui.js';
 import { uid, nuevoPiso, unidadesPara, reajustarUnidad, regenerarRecurrente, sincronizar, migrar, estadoVacio } from './store.js';
 import { CATEGORIAS, CAT, MODALIDADES, num, r2, estadoCobro } from './calc.js';
-import { crearXlsx, leerXlsx, isoDeSerial } from './xlsx.js';
+import { crearXlsx, leerXlsx, isoDeSerial, SIN_CALCULAR } from './xlsx.js';
 import { normalizar, fechaISO } from './csv.js';
 
 /* ───────────── Conversión de valores ───────────── */
@@ -16,20 +16,35 @@ const NO = new Set(['no', '0', 'false', 'falso', 'n']);
 const vacio = (v) => v === '' || v == null;
 const borrarCampo = (v) => typeof v === 'string' && v.trim() === '-';
 
+let desfase1904 = 0; // 1462 días si el libro usa el sistema de fechas de 1904
+const fechaReal = (iso) => {
+  if (!iso) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return y > 1900 && y < 2200 && t.getUTCMonth() === m - 1 && t.getUTCDate() === d ? iso : null;
+};
 function aFecha(v) {
-  if (typeof v === 'number') return v > 20000 && v < 80000 ? isoDeSerial(v) : null;
-  const s = String(v).trim();
-  return fechaISO(s) || null;
+  if (typeof v === 'number') return v > 20000 && v < 80000 ? isoDeSerial(v + desfase1904) : null;
+  return fechaReal(fechaISO(String(v).trim()));
 }
 function aMes(v) {
-  if (typeof v === 'number') return v > 20000 ? isoDeSerial(v).slice(0, 7) : null;
+  if (typeof v === 'number') return v > 20000 && v < 80000 ? isoDeSerial(v + desfase1904).slice(0, 7) : null;
   const s = String(v).trim();
-  let m = s.match(/^(\d{4})[-/.](\d{1,2})$/);
-  if (m) return `${m[1]}-${m[2].padStart(2, '0')}`;
-  m = s.match(/^(\d{1,2})[-/.](\d{4})$/);
-  if (m) return `${m[2]}-${m[1].padStart(2, '0')}`;
-  const f = fechaISO(s);
+  let y, m;
+  let r = s.match(/^(\d{4})[-/.](\d{1,2})$/);
+  if (r) [y, m] = [r[1], r[2]];
+  else if ((r = s.match(/^(\d{1,2})[-/.](\d{4})$/))) [y, m] = [r[2], r[1]];
+  if (y) { const ym = `${y}-${m.padStart(2, '0')}`; return fechaReal(`${ym}-01`) ? ym : null; }
+  const f = fechaReal(fechaISO(s));
   return f ? f.slice(0, 7) : null;
+}
+/** Número escrito por una persona: «1.234,56», «1234.56», «1,234.56», «850 €». NaN si no es un número. */
+function aNumero(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  const t = String(v).replace(/[\s€%]/g, '');
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return Number(t.replace(/,/g, '')); // formato inglés
+  if (/^-?(\d+|\d{1,3}(\.\d{3})+)(,\d+)?$/.test(t) || /^-?\d*\.\d+$/.test(t) || /^-?\d+,\d+$/.test(t)) return num(t);
+  return NaN;
 }
 function aBool(v) {
   const s = normalizar(v);
@@ -62,6 +77,16 @@ const categoriaDe = (v) => {
 };
 const CANALES = ['Airbnb', 'Booking', 'Directo', 'Otro'];
 const canalDe = (v) => CANALES.find((c) => normalizar(c) === normalizar(v)) || String(v).trim();
+
+/** Igual que en el formulario de cobro: conserva los pagos anteriores y apunta la diferencia. */
+function ajustarPagos(obj, cobrado, fecha) {
+  const antes = num(obj.cobrado);
+  const pagos = obj.pagos?.length ? obj.pagos : antes > 0 ? [{ fecha: obj.fechaCobro || fecha, importe: antes }] : [];
+  if (cobrado <= 0) return [];
+  if (Math.abs(cobrado - antes) < 0.005) return pagos;
+  if (cobrado > antes) return [...pagos, { fecha, importe: r2(cobrado - antes) }];
+  return [{ fecha, importe: cobrado }];
+}
 
 /* ───────────── Definición de hojas ───────────── */
 // Cada columna: [titulo, propiedad, tipo, opciones]. Tipos: id, texto, numero, importe, fecha, mes, bool,
@@ -129,6 +154,9 @@ const H = {
 };
 // Orden de importación: primero lo que otros referencian.
 const ORDEN = ['titulares', 'pisos', 'unidades', 'contratos', 'hipotecas', 'recurrentes', 'gastos', 'cobros', 'reservas'];
+// Columnas en %: una celda con formato de porcentaje de Excel llega como 0,035 en vez de 3,5.
+const PCT = { tipoEstimado: 1, reduccion: 1, pctFiscal: 1, tipo: 0.3 };
+const LIMITES = { reduccion: [0, 90], tipoEstimado: [0, 100], tipo: [0, 100], pctFiscal: [0, 100] };
 const TIPO_COL = { id: 'id', importe: 'importe', numero: 'numero', fecha: 'fecha', ro: 'id' };
 
 const AJUSTES = [
@@ -218,7 +246,20 @@ export async function prepararImportacion(file, base = app.s) {
   const libro = await leerXlsx(file);
   const s = migrar(JSON.parse(JSON.stringify(base || estadoVacio())));
   const informe = { hojas: [], errores: [], total: { nuevos: 0, cambiados: 0, borrados: 0 } };
-  const hojaPorNombre = Object.fromEntries(Object.keys(libro).map((n) => [normalizar(n), libro[n]]));
+  const hoyImp = today();
+  desfase1904 = libro.fecha1904 ? 1462 : 0;
+  // Hojas por nombre; vale también «Gastos 2026» o «Pisos (copia)».
+  const conocidas = [...ORDEN.map((k) => normalizar(H[k].hoja)), 'ajustes'].sort((a, b) => b.length - a.length);
+  const hojaPorNombre = {};
+  const ignoradas = [];
+  for (const n of Object.keys(libro)) {
+    const t = normalizar(n);
+    const k = conocidas.find((c) => t === c) || conocidas.find((c) => t.startsWith(c));
+    if (k && !hojaPorNombre[k]) hojaPorNombre[k] = libro[n];
+    else if (!['leeme', 'listas'].includes(t) && libro[n].some((f) => f.some((c) => !vacio(c)))) ignoradas.push(n);
+  }
+  informe.ignoradas = ignoradas;
+  informe.avisos = [];
   if (!ORDEN.some((k) => hojaPorNombre[normalizar(H[k].hoja)])) {
     throw new Error('No se ha encontrado ninguna hoja de la app (Pisos, Gastos, Contratos…). Descarga primero el Excel desde la app y úsalo como plantilla.');
   }
@@ -226,13 +267,23 @@ export async function prepararImportacion(file, base = app.s) {
   // Nombres originales: si en el Excel se renombra un piso, las demás hojas aún lo citan por su nombre antiguo.
   const original = {};
   for (const col of ['titulares', 'pisos', 'unidades']) original[col] = new Map(s[col].map((x) => [x.id, normalizar(x.nombre)]));
-  const buscar = (col, v, campo = 'nombre', filtro = () => true) => {
+  const AMBIGUO = { ambiguo: true };
+  /** Busca por ID o por nombre. Si la fila ya apunta a uno con ese nombre, se queda con él (nombres repetidos). */
+  const buscar = (col, v, campo = 'nombre', filtro = () => true, actualId = null) => {
     if (vacio(v)) return null;
     const t = normalizar(v);
     const id = String(v).trim();
-    return s[col].find((x) => filtro(x) && (x.id === id || normalizar(x[campo]) === t))
-      || (original[col] && s[col].find((x) => filtro(x) && original[col].get(x.id) === t)) || null;
+    const porId = s[col].find((x) => x.id === id && filtro(x));
+    if (porId) return porId;
+    const actual = actualId && s[col].find((x) => x.id === actualId);
+    if (actual && (normalizar(actual[campo]) === t || original[col]?.get(actual.id) === t)) return actual;
+    let m = s[col].filter((x) => filtro(x) && normalizar(x[campo]) === t);
+    if (!m.length && original[col]) m = s[col].filter((x) => filtro(x) && original[col].get(x.id) === t);
+    if (m.length > 1) return AMBIGUO;
+    return m[0] || null;
   };
+  const quitados = new Set(); // IDs eliminados en cascada (al borrar un piso o un contrato)
+  const cascada = {};
 
   for (const k of ORDEN) {
     const h = H[k];
@@ -247,12 +298,22 @@ export async function prepararImportacion(file, base = app.s) {
     const cab = filas[iCab].map(normalizar);
     const idx = claves.map(([k, corto]) => { const i = cab.indexOf(k); return i >= 0 ? i : cab.indexOf(corto); });
     const res = { hoja: h.hoja, nuevos: 0, cambiados: 0, borrados: 0, errores: 0 };
+    if (idx[0] < 0 && s[h.col].length) {
+      const n = filas.slice(iCab + 1).filter((f) => f && !f.every(vacio)).length;
+      if (n) informe.avisos.push(`La hoja ${h.hoja} no tiene columna ID: sus ${n} filas se crearán como registros nuevos, aunque ya existan en la app.`);
+    }
+    const vistos = new Map();
     for (let r = iCab + 1; r < filas.length; r++) {
       const fila = filas[r] || [];
       if (fila.every(vacio)) continue;
       const val = (i) => (idx[i] >= 0 ? fila[idx[i]] : '');
       const err = (m) => { informe.errores.push(`${h.hoja}, fila ${r + 1}: ${m}`); res.errores++; };
       const idTxt = String(val(0) ?? '').trim();
+      if (idTxt && quitados.has(idTxt)) continue; // ya eliminado al borrar su piso o contrato
+      if (idTxt && vistos.has(idTxt)) { err(`ID repetido (también en la fila ${vistos.get(idTxt)}). Para crear un registro nuevo a partir de una copia, borra el ID de la fila copiada.`); continue; }
+      if (idTxt) vistos.set(idTxt, r + 1);
+      const iFormula = h.cols.findIndex((c, i) => val(i) === SIN_CALCULAR);
+      if (iFormula >= 0) { err(`«${h.cols[iFormula][0]}» tiene una fórmula sin calcular; ábrelo y guárdalo en Excel o escribe el valor`); continue; }
       let obj = idTxt ? s[h.col].find((x) => x.id === idTxt) : null;
       const iBorrar = h.cols.findIndex((c) => c[1] === '_borrar');
       if (iBorrar >= 0 && aBool(val(iBorrar)) === true) {
@@ -266,8 +327,24 @@ export async function prepararImportacion(file, base = app.s) {
           if (rec) rec.omitidos = [...new Set([...(rec.omitidos || []), obj.periodo])];
         }
         s[h.col] = s[h.col].filter((x) => x !== obj);
-        if (k === 'pisos') for (const c of ['unidades', 'contratos', 'cobros', 'reservas', 'gastos', 'recurrentes', 'hipotecas']) s[c] = s[c].filter((x) => x.pisoId !== obj.id);
-        if (k === 'contratos') s.cobros = s.cobros.filter((c) => c.contratoId !== obj.id || num(c.cobrado) > 0);
+        if (k === 'pisos') {
+          for (const c of ['unidades', 'contratos', 'cobros', 'reservas', 'gastos', 'recurrentes', 'hipotecas']) {
+            const fuera = s[c].filter((x) => x.pisoId === obj.id);
+            if (!fuera.length) continue;
+            for (const x of fuera) quitados.add(x.id);
+            cascada[H[c].hoja] = (cascada[H[c].hoja] || 0) + fuera.length;
+            s[c] = s[c].filter((x) => x.pisoId !== obj.id);
+          }
+          s.docs = (s.docs || []).filter((d) => d.pisoId !== obj.id);
+        }
+        if (k === 'contratos') {
+          // Como en la app: se quitan los recibos sin cobrar y los cobrados quedan como historial.
+          for (const c of s.cobros) if (c.contratoId === obj.id && !(num(c.cobrado) > 0)) quitados.add(c.id);
+          s.cobros = s.cobros.filter((c) => c.contratoId !== obj.id || num(c.cobrado) > 0);
+          for (const c of s.cobros) if (c.contratoId === obj.id) Object.assign(c, { pagador: obj.inquilino, telefono: obj.telefono || '', contratoId: null, auto: false });
+          s.docs = (s.docs || []).filter((d) => !(d.tipo === 'contrato' && d.refId === obj.id));
+        }
+        if (k === 'gastos' || k === 'hipotecas' || k === 'reservas') s.docs = (s.docs || []).filter((d) => d.refId !== obj.id);
         if (k === 'recurrentes') for (const g of s.gastos) if (g.recurrenteId === obj.id) g.recurrenteId = null;
         res.borrados++;
         continue;
@@ -286,10 +363,19 @@ export async function prepararImportacion(file, base = app.s) {
         if (borrarCampo(v)) { if (o.req) fallo = `«${titulo}» no puede quedar vacío`; else cambios[prop] = tipo === 'numero' || tipo === 'importe' ? 0 : tipo === 'bool' ? false : ''; return; }
         let x;
         switch (tipo) {
-          case 'texto': x = String(v).trim(); break;
-          case 'numero': x = typeof v === 'number' ? v : num(v); if (!Number.isFinite(x)) fallo = `«${titulo}» no es un número`; break;
-          case 'importe': x = r2(typeof v === 'number' ? v : num(v)); break;
-          case 'pct': x = normalizar(v) === 'auto' ? null : Math.min(100, Math.max(0, typeof v === 'number' ? v : num(v))); break;
+          case 'texto': x = String(v).replace(/\r\n?/g, '\n').trim(); break;
+          case 'numero':
+          case 'importe':
+          case 'pct': {
+            if (tipo === 'pct' && normalizar(v) === 'auto') { x = null; break; }
+            x = aNumero(v);
+            if (!Number.isFinite(x)) { fallo = `«${titulo}» no es un número (${v})`; break; }
+            if (PCT[prop] && typeof v === 'number' && x > 0 && x < PCT[prop]) x *= 100; // celda con formato %
+            if (LIMITES[prop] && (x < LIMITES[prop][0] || x > LIMITES[prop][1])) { fallo = `«${titulo}» debe estar entre ${LIMITES[prop][0]} y ${LIMITES[prop][1]}`; break; }
+            if (tipo === 'importe') x = r2(x);
+            else x = Math.round(x * 1e6) / 1e6;
+            break;
+          }
           case 'fecha': x = aFecha(v); if (!x) fallo = `«${titulo}» no es una fecha válida (${v})`; break;
           case 'mes': x = aMes(v); if (!x) fallo = `«${titulo}» no es un mes válido (usa aaaa-mm)`; break;
           case 'bool': x = aBool(v); if (x == null) fallo = `«${titulo}» debe ser sí o no`; break;
@@ -298,7 +384,8 @@ export async function prepararImportacion(file, base = app.s) {
           case 'categoria': x = categoriaDe(v); if (!x) fallo = `categoría desconocida «${v}»`; break;
           case 'canal': x = canalDe(v); break;
           case 'titular': {
-            let t = buscar('titulares', v);
+            let t = buscar('titulares', v, 'nombre', undefined, obj?.titularId);
+            if (t === AMBIGUO) { fallo = `hay varios titulares llamados «${v}»; cambia uno de nombre o usa su ID`; break; }
             if (!t) { // se crea el titular si no existe
               t = { id: uid(), nombre: String(v).trim(), nif: '', tipo: /\b(s\.?l\.?u?|s\.?a\.?|sociedad|slu)\b/i.test(String(v)) ? 'sociedad' : 'persona', tipoEstimado: 0 };
               t.tipoEstimado = t.tipo === 'sociedad' ? 25 : 30;
@@ -308,19 +395,36 @@ export async function prepararImportacion(file, base = app.s) {
             x = t.id;
             break;
           }
-          case 'piso': { const p = buscar('pisos', v); if (!p) fallo = `no existe el piso «${v}»`; else x = p.id; break; }
+          case 'piso': {
+            const p = buscar('pisos', v, 'nombre', undefined, obj?.pisoId);
+            if (p === AMBIGUO) fallo = `hay varios pisos llamados «${v}»; cambia uno de nombre o usa su ID`;
+            else if (!p) fallo = `no existe el piso «${v}»`;
+            else x = p.id;
+            break;
+          }
           case 'unidad': {
             const p = pisoDeFila();
-            if (!p) { fallo = 'indica el piso de la habitación'; break; }
-            let u = buscar('unidades', v, 'nombre', (u2) => u2.pisoId === p.id);
-            if (!u) { u = { id: uid(), pisoId: p.id, nombre: String(v).trim() }; s.unidades.push(u); }
+            if (!p || p === AMBIGUO) { fallo = 'indica el piso de la habitación'; break; }
+            const delPiso = s.unidades.filter((u2) => u2.pisoId === p.id);
+            let u = buscar('unidades', v, 'nombre', (u2) => u2.pisoId === p.id, obj?.unidadId);
+            if (u === AMBIGUO) { fallo = `hay varias habitaciones «${v}» en ${p.nombre}`; break; }
+            if (!u && p.modalidad !== 'habitaciones' && delPiso.length === 1) u = delPiso[0]; // vivienda completa
+            if (!u && p.modalidad !== 'habitaciones') { fallo = `«${v}» no existe en ${p.nombre}`; break; }
+            if (!u) {
+              u = { id: uid(), pisoId: p.id, nombre: String(v).trim() };
+              s.unidades.push(u);
+              informe.avisos.push(`Se crea la habitación «${u.nombre}» en ${p.nombre}${delPiso.length ? ` (ya tenía: ${delPiso.map((x2) => x2.nombre).join(', ')})` : ''}.`);
+            }
             x = u.id;
             break;
           }
           case 'contrato': {
+            if (obj && String(v).trim() === obj.contratoId) return; // sin cambio
             const p = pisoDeFila();
-            const c = s.contratos.find((k2) => k2.id === String(v).trim()) || buscar('contratos', v, 'inquilino', (k2) => !p || k2.pisoId === p.id);
-            if (!c) fallo = `no existe el contrato «${v}»`; else x = c.id;
+            const c = s.contratos.find((k2) => k2.id === String(v).trim()) || buscar('contratos', v, 'inquilino', (k2) => !p || p === AMBIGUO || k2.pisoId === p.id);
+            if (c === AMBIGUO) fallo = `hay varios contratos de «${v}»; usa el ID del contrato`;
+            else if (!c) fallo = `no existe el contrato «${v}»`;
+            else x = c.id;
             break;
           }
           case 'rentas': {
@@ -329,7 +433,7 @@ export async function prepararImportacion(file, base = app.s) {
               if (!parte.trim()) continue;
               const m = parte.split(/[=:]/);
               const mes = aMes(m[0]);
-              const renta = r2(num(m[1]));
+              const renta = r2(aNumero(m[1] ?? ''));
               if (!mes || !(renta > 0)) { fallo = `subida de renta no válida «${parte.trim()}» (usa 2026-11=950)`; break; }
               x.push({ desde: mes, renta });
             }
@@ -343,7 +447,8 @@ export async function prepararImportacion(file, base = app.s) {
           const actual = obj[prop];
           const igual = tipo === 'bool' ? x === (prop === 'deducible' || prop === 'prorratear' ? actual !== false : !!actual)
             : tipo === 'numero' || tipo === 'importe' ? Math.abs(num(actual) - x) < 0.005 && (actual !== '' && actual != null || x === 0)
-              : JSON.stringify(actual ?? '') === JSON.stringify(x ?? '');
+              : tipo === 'texto' ? String(actual ?? '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g, '').trim() === x
+                : JSON.stringify(actual ?? '') === JSON.stringify(x ?? '');
           if (igual) return;
         }
         cambios[prop] = x;
@@ -371,25 +476,41 @@ export async function prepararImportacion(file, base = app.s) {
         if (prueba.fin && prueba.fin < prueba.inicio) { err('la fecha de fin es anterior al inicio'); continue; }
         if (!(num(prueba.renta) > 0)) { err('la renta debe ser mayor que cero'); continue; }
         prueba.diaPago = Math.min(31, Math.max(1, num(prueba.diaPago) | 0 || 1));
+        if (cambios.fin !== undefined && cambios.fin !== obj.fin && !('finalizado' in cambios)) { prueba.avisosHechos = []; prueba.finalizado = false; }
+        if (cambios.finalizado === true && (!prueba.fin || prueba.fin > hoyImp)) prueba.fin = hoyImp < prueba.inicio ? prueba.inicio : hoyImp;
+        const choca = s.contratos.find((o2) => o2.id !== obj.id && o2.unidadId === prueba.unidadId && o2.inicio <= (prueba.fin || '9999-12-31') && prueba.inicio <= (o2.fin || '9999-12-31'));
+        if (choca) { err(`se solapa con el contrato de ${choca.inquilino} en la misma habitación; ajusta las fechas o finaliza ese contrato`); continue; }
       }
+      if (k === 'pisos' && !nuevo && prueba.modalidad !== 'turistico' && obj.modalidad === 'turistico' && s.reservas.some((x) => x.pisoId === obj.id)) { err('el piso tiene reservas turísticas: bórralas antes de cambiar la modalidad'); continue; }
+      if (k === 'pisos' && !nuevo && prueba.modalidad !== obj.modalidad) informe.avisos.push(`${prueba.nombre}: cambia de «${MOD_TXT[obj.modalidad]}» a «${MOD_TXT[prueba.modalidad]}». Revisa sus habitaciones en la hoja Habitaciones o en la app.`);
       if (k === 'reservas' && !(prueba.salida > prueba.entrada)) { err('la salida debe ser posterior a la entrada'); continue; }
       if (k === 'reservas' && s.pisos.find((p) => p.id === prueba.pisoId)?.modalidad !== 'turistico') { err('las reservas solo pueden ir en pisos turísticos'); continue; }
       if ((k === 'gastos' || k === 'recurrentes' || k === 'cobros') && !(num(prueba.importe) > 0)) { err('el importe debe ser mayor que cero'); continue; }
       if (k === 'hipotecas' && prueba.mesFin < prueba.mesRef) { err('la última cuota es anterior al mes de referencia'); continue; }
       if (k === 'recurrentes') { prueba.dia = Number(String(prueba.desde).slice(8, 10)) || 1; prueba.cadaMeses = Math.max(1, num(prueba.cadaMeses) | 0 || 1); }
+      if (k === 'cobros' && !nuevo && obj.auto && (cambios.periodo && cambios.periodo !== obj.periodo || cambios.contratoId && cambios.contratoId !== obj.contratoId)) {
+        err('es un recibo generado desde el contrato: no se puede cambiar su mes ni su contrato (cambia el importe o la fecha, o márcalo para borrar)');
+        continue;
+      }
       if (k === 'cobros') {
         const kk = prueba.contratoId ? s.contratos.find((c) => c.id === prueba.contratoId) : null;
         if (kk) { prueba.pisoId = kk.pisoId; prueba.unidadId = kk.unidadId; }
         if (!prueba.unidadId || s.unidades.find((u) => u.id === prueba.unidadId)?.pisoId !== prueba.pisoId) prueba.unidadId = s.unidades.find((u) => u.pisoId === prueba.pisoId)?.id;
         prueba.cobrado = r2(Math.min(num(prueba.importe), num(prueba.cobrado)));
-        if (prueba.cobrado > 0 && !prueba.fechaCobro) prueba.fechaCobro = prueba.vencimiento;
         if (!nuevo && obj.auto && (cambios.importe != null && cambios.importe !== obj.importe || cambios.vencimiento && cambios.vencimiento !== obj.vencimiento)) prueba.editado = true;
-        if (prueba.cobrado !== num(obj.cobrado)) prueba.pagos = prueba.cobrado > 0 ? [{ fecha: prueba.fechaCobro, importe: prueba.cobrado }] : [];
       }
       if (k === 'reservas') {
         const esperado = r2(num(prueba.importe) - (prueba.comisionDescontada ? num(prueba.comision) : 0));
-        prueba.cobrado = Math.min(esperado, num(prueba.cobrado));
-        if (prueba.cobrado > 0 && !prueba.fechaCobro) prueba.fechaCobro = prueba.entrada;
+        prueba.cobrado = r2(Math.min(esperado, num(prueba.cobrado)));
+      }
+      if (k === 'cobros' || k === 'reservas') {
+        // Historial de pagos como en la app: lo nuevo se apunta con la fecha de cobro indicada o con la de hoy.
+        const fecha = cambios.fechaCobro || (nuevo ? (k === 'cobros' ? prueba.vencimiento : prueba.entrada) : hoyImp);
+        if (prueba.cobrado !== num(obj.cobrado) || nuevo && prueba.cobrado > 0) {
+          prueba.pagos = ajustarPagos(obj, prueba.cobrado, fecha);
+          if (prueba.cobrado > 0 && !cambios.fechaCobro) prueba.fechaCobro = fecha;
+          if (!(prueba.cobrado > 0)) prueba.fechaCobro = '';
+        }
       }
       if (k === 'gastos' && !nuevo && obj.recurrenteId && JSON.stringify({ ...obj, ...cambios }) !== antes) prueba.editado = true;
       const habitaciones = prueba._habitaciones;
@@ -421,6 +542,14 @@ export async function prepararImportacion(file, base = app.s) {
     if (res.nuevos || res.cambiados || res.borrados || res.errores) informe.hojas.push(res);
     informe.total.nuevos += res.nuevos; informe.total.cambiados += res.cambiados; informe.total.borrados += res.borrados;
   }
+
+  for (const [hoja, n] of Object.entries(cascada)) {
+    let fila = informe.hojas.find((x) => x.hoja === hoja);
+    if (!fila) { fila = { hoja, nuevos: 0, cambiados: 0, borrados: 0, errores: 0 }; informe.hojas.push(fila); }
+    fila.borrados += n;
+    informe.total.borrados += n;
+  }
+  informe.hojas.sort((a, b) => [...ORDEN.map((k) => H[k].hoja), 'Ajustes'].indexOf(a.hoja) - [...ORDEN.map((k) => H[k].hoja), 'Ajustes'].indexOf(b.hoja));
 
   // Ajustes (hoja de clave / valor)
   const aj = hojaPorNombre.ajustes;
@@ -467,7 +596,16 @@ export async function descargarExcel() {
   }
 }
 
-export const hayDeshacer = () => { try { return !!localStorage.getItem(CLAVE_DESHACER); } catch { return false; } };
+/** Hay copia para deshacer (dura 14 días; luego se libera el espacio). */
+export const hayDeshacer = () => {
+  try {
+    const t = localStorage.getItem(CLAVE_DESHACER);
+    if (!t) return false;
+    const fecha = JSON.parse(t.slice(0, 200).match(/"fecha":"([^"]+)"/)?.[0] ? `{${t.slice(0, 200).match(/"fecha":"([^"]+)"/)[0]}}` : '{}').fecha;
+    if (fecha && Date.now() - new Date(fecha) > 14 * 864e5) { localStorage.removeItem(CLAVE_DESHACER); return false; }
+    return true;
+  } catch { return false; }
+};
 
 export async function importarExcel(file) {
   let res;
@@ -490,6 +628,8 @@ export async function importarExcel(file) {
     </table></div>`}
     ${informe.titularesCreados ? html`<p class="small muted">${informe.titularesCreados === 1 ? 'Se creará 1 titular nuevo' : `Se crearán ${informe.titularesCreados} titulares nuevos`} que no existía${informe.titularesCreados === 1 ? '' : 'n'}.</p>` : ''}
     ${informe.generados ? html`<p class="small muted">Además se generarán ${informe.generados} recibos o apuntes de gastos fijos automáticos.</p>` : ''}
+    ${informe.avisos.length ? html`<div class="import-avisos"><b>Revisa:</b><ul class="small">${informe.avisos.slice(0, 20).map((a) => html`<li>${a}</li>`)}</ul></div>` : ''}
+    ${informe.ignoradas.length ? html`<p class="small muted">Hojas que no se reconocen y se ignoran: ${informe.ignoradas.join(', ')}. Deben llamarse como las de la app (Pisos, Gastos, Cobros…).</p>` : ''}
     ${informe.errores.length ? html`<details class="import-errores" open><summary><b>${informe.errores.length === 1 ? '1 fila no se importará' : `${informe.errores.length} filas no se importarán`}</b> (el resto sí)</summary>
       <ul class="small">${informe.errores.slice(0, 60).map((e) => html`<li>${e}</li>`)}${informe.errores.length > 60 ? html`<li>… y ${informe.errores.length - 60} más</li>` : ''}</ul></details>` : ''}`;
   abrirDialogo({

@@ -3,7 +3,11 @@
 // columna y listas desplegables; lee cualquier .xlsx (Excel, Numbers, Google Sheets, LibreOffice).
 import { crearZip, leerZip } from './docs.js';
 
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+// Excel admite 32 767 caracteres por celda; se quitan los caracteres que no caben en XML.
+const esc = (s) => String(s).slice(0, 32767).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+  .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '');
+/** Marca de una celda con fórmula sin valor calculado (libros generados por programas). */
+export const SIN_CALCULAR = Symbol('sin calcular');
 export const colLetra = (i) => { let s = ''; i += 1; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
 const colIndice = (letras) => [...letras].reduce((a, c) => a * 26 + c.charCodeAt(0) - 64, 0) - 1;
 
@@ -114,7 +118,11 @@ export async function crearXlsx(hojas, listas = {}) {
 /* ───────────── Lectura ───────────── */
 
 const porTag = (nodo, tag) => [...nodo.getElementsByTagNameNS('*', tag)];
-const xmlDe = (txt) => new DOMParser().parseFromString(txt, 'application/xml');
+const xmlDe = (txt) => {
+  const doc = new DOMParser().parseFromString(txt, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('El Excel está dañado o tiene un formato que no se puede leer.');
+  return doc;
+};
 
 /**
  * Lee un .xlsx → { nombreHoja: [[valor, …], …] } (valores: string o number; las fechas llegan como
@@ -131,9 +139,15 @@ export async function leerXlsx(blob) {
   const destino = Object.fromEntries(porTag(rels, 'Relationship').map((r) => [r.getAttribute('Id'), r.getAttribute('Target')]));
   const compartidas = [];
   const ss = texto('xl/sharedStrings.xml');
-  if (ss) for (const si of porTag(xmlDe(ss), 'si')) compartidas.push(porTag(si, 't').map((t) => t.textContent).join(''));
+  // Texto de una celda con formato enriquecido: todos los <t> salvo los de la guía fonética (<rPh>).
+  const textoDe = (nodo) => porTag(nodo, 't').filter((t) => t.parentNode?.localName !== 'rPh').map((t) => t.textContent).join('');
+  if (ss) for (const si of porTag(xmlDe(ss), 'si')) compartidas.push(textoDe(si));
   const libro = {};
-  for (const h of porTag(xmlDe(wb), 'sheet')) {
+  // Libros con el sistema de fechas de 1904 (Excel antiguo de Mac): se avisa al lector para corregirlas.
+  const wbDoc = xmlDe(wb);
+  const pr = porTag(wbDoc, 'workbookPr')[0]?.getAttribute('date1904');
+  Object.defineProperty(libro, 'fecha1904', { value: pr === '1' || pr === 'true', enumerable: false });
+  for (const h of porTag(wbDoc, 'sheet')) {
     const rid = h.getAttribute('r:id') || h.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
     let ruta = destino[rid] || '';
     ruta = ruta.startsWith('/') ? ruta.slice(1) : `xl/${ruta.replace(/^\.\//, '')}`;
@@ -152,10 +166,11 @@ export async function leerXlsx(blob) {
         const v = porTag(c, 'v')[0]?.textContent;
         let val = '';
         if (t === 's') val = compartidas[Number(v)] ?? '';
-        else if (t === 'inlineStr') val = porTag(c, 't').map((x) => x.textContent).join('');
+        else if (t === 'inlineStr') val = textoDe(c);
         else if (t === 'str' || t === 'e') val = v ?? '';
         else if (t === 'b') val = v === '1' ? 'sí' : 'no';
         else if (v != null && v !== '') val = Number(v);
+        else if (porTag(c, 'f').length) val = SIN_CALCULAR;
         fila[ci] = val;
       }
       filas[Number.isFinite(ri) && ri >= 0 ? ri : filas.length] = fila;
