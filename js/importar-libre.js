@@ -4,7 +4,7 @@
 // 2) Se muestra lo entendido para corregirlo con desplegables.
 // 3) Se traduce a las hojas de la app y se importa con el mismo motor (resumen previo y deshacer).
 import { app, today } from './state.js';
-import { html, abrirDialogo, cerrarDialogo, toast } from './ui.js';
+import { html, abrirDialogo, cerrarDialogo, toast, fmtEUR } from './ui.js';
 import { normalizar, filasCSV } from './csv.js';
 import { leerXlsx, leerOds } from './xlsx.js';
 import { CAT, num, r2, mesLargo, addMonths, addDays } from './calc.js';
@@ -464,6 +464,70 @@ function separarBloques(nombre, filas) {
   });
 }
 
+/** Columnas y filas de datos según la fila de títulos elegida (h.cab). */
+function construirHoja(h) {
+  const ancho = Math.max(0, ...h.filas.slice(h.cab, h.cab + 300).map((f) => f.length));
+  h.datos = h.filas.slice(h.cab + 1).filter((f) => f.some((c) => !vacio(c)));
+  h.columnas = [];
+  for (let i = 0; i < ancho; i++) {
+    const titulo = texto(h.filas[h.cab][i]) || `Columna ${i + 1}`;
+    h.columnas.push({ titulo, perfil: perfil(h.datos.slice(0, 400), i, titulo), mes: mesDeCelda(h.filas[h.cab][i], h.anio) });
+  }
+  h.rolesUsuario = new Map();
+  // Filas de totales, saldos y subtotales: desmarcadas de entrada (se pueden volver a marcar)
+  h.excluidas = new Set(h.datos.map((f, ri) => {
+    const primero = f.find((c) => typeof c === 'string' && c && !/^\d{4}-\d{2}-\d{2}$/.test(c));
+    return primero && esTotal(primero) ? ri : -1;
+  }).filter((ri) => ri >= 0));
+}
+
+/** Decide qué contiene la tabla (gastos, cobros, por meses…) y qué es cada columna. */
+function clasificarHoja(h, girar = true) {
+  let colMeses = h.columnas.filter((c) => c.mes).length;
+  // Tabla girada: meses en las filas (primera columna) y pisos o conceptos en las columnas
+  // (solo con nombres de mes, no fechas completas, y un mes distinto por fila)
+  if (girar) {
+    const mesesFila = h.datos.map((f) => (typeof f[0] === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(f[0]) ? mesDeCelda(f[0], h.anio) : null)).filter(Boolean);
+    const filasMes = h.datos.filter((f) => typeof f[0] === 'string' && mesDeCelda(f[0], h.anio));
+    const matriz = filasMes.every((f) => f.slice(1).filter((c) => !vacio(c) && !Number.isFinite(numL(c))).length === 0);
+    const enFilas = matriz && new Set(mesesFila).size === mesesFila.length ? mesesFila.length : 0;
+    if (colMeses < 3 && enFilas >= 3 && enFilas >= h.datos.filter((f) => !esTotal(texto(f[0]))).length * 0.6) {
+      const tabla = [h.filas[h.cab], ...h.datos];
+      const ancho2 = Math.max(...tabla.map((f) => f.length));
+      h.filas = Array.from({ length: ancho2 }, (_, j) => tabla.map((f) => f[j] ?? ''));
+      h.cab = 0;
+      h.transpuesta = true;
+      construirHoja(h);
+      colMeses = h.columnas.filter((c) => c.mes).length;
+    }
+  }
+  h.tipo = 'ignorar'; h.map = {};
+  const nombre = h.pista;
+  if (colMeses >= 3) {
+    h.tipo = 'meses';
+    const esIng = puntuaNombre(nombre, 'cobros'); const esGas = puntuaNombre(nombre, 'gastos');
+    h.modo = esIng && !esGas ? 'ingresos' : esGas && !esIng ? 'gastos' : 'auto';
+    return;
+  }
+  let mejor = null;
+  for (const tipo of Object.keys(TIPOS)) {
+    const map = mapear(h, tipo);
+    if (!cumple(tipo, map)) continue;
+    const calidad = Object.keys(map).reduce((a, c) => a + puntuaTitulo(h.columnas[map[c]].titulo, c), 0);
+    let p = calidad + puntuaNombre(nombre, tipo) * 6;
+    // Desempates habituales
+    if (tipo === 'movimientos' && ('ingreso' in map && 'gasto' in map)) p += 6;
+    if (tipo === 'movimientos' && 'importe' in map && h.columnas[map.importe].perfil.negativos && h.columnas[map.importe].perfil.positivos) p += 4;
+    if (tipo === 'cobros' && 'inquilino' in map) p += 3;
+    if (tipo === 'gastos' && ('proveedor' in map || 'categoria' in map)) p += 2;
+    if (tipo === 'pisos' && ('fecha' in mapear(h, 'gastos') || 'importe' in mapear(h, 'gastos'))) p -= 4;
+    if (tipo === 'contratos' && 'renta' in map && puntuaTitulo(h.columnas[map.renta].titulo, 'renta') >= 2) p += 2;
+    if (!mejor || p > mejor.p) mejor = { tipo, map, p };
+  }
+  if (mejor) { h.tipo = mejor.tipo; h.map = mejor.map; }
+}
+function prepararHoja(h) { construirHoja(h); clasificarHoja(h); }
+
 /** Analiza todas las hojas y propone cómo importarlas. */
 export function analizar(libro, s) {
   const hojas = [];
@@ -497,56 +561,7 @@ export function analizar(libro, s) {
     // Año: en el nombre de la hoja, el título o las primeras filas
     const anio = [nombre, ...filas.slice(0, Math.max(1, cab + 1)).flat()].map((x) => String(x).match(/\b(20\d{2})\b/)?.[1]).find(Boolean);
     if (anio) h.anio = anio;
-    const construir = () => {
-      const ancho = Math.max(0, ...h.filas.slice(h.cab, h.cab + 300).map((f) => f.length));
-      h.datos = h.filas.slice(h.cab + 1).filter((f) => f.some((c) => !vacio(c)));
-      h.columnas = [];
-      for (let i = 0; i < ancho; i++) {
-        const titulo = texto(h.filas[h.cab][i]) || `Columna ${i + 1}`;
-        h.columnas.push({ titulo, perfil: perfil(h.datos.slice(0, 400), i, titulo), mes: mesDeCelda(h.filas[h.cab][i], h.anio) });
-      }
-    };
-    if (cab >= 0) {
-      construir();
-      let colMeses = h.columnas.filter((c) => c.mes).length;
-      // Tabla girada: meses en las filas (primera columna) y pisos o conceptos en las columnas
-      // (solo con nombres de mes, no fechas completas, y un mes distinto por fila)
-      const mesesFila = h.datos.map((f) => (typeof f[0] === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(f[0]) ? mesDeCelda(f[0], h.anio) : null)).filter(Boolean);
-      const filasMes = h.datos.filter((f) => typeof f[0] === 'string' && mesDeCelda(f[0], h.anio));
-      const matriz = filasMes.every((f) => f.slice(1).filter((c) => !vacio(c) && !Number.isFinite(numL(c))).length === 0);
-      const enFilas = matriz && new Set(mesesFila).size === mesesFila.length ? mesesFila.length : 0;
-      if (colMeses < 3 && enFilas >= 3 && enFilas >= h.datos.filter((f) => !esTotal(texto(f[0]))).length * 0.6) {
-        const tabla = [filas[cab], ...h.datos];
-        const ancho2 = Math.max(...tabla.map((f) => f.length));
-        h.filas = Array.from({ length: ancho2 }, (_, j) => tabla.map((f) => f[j] ?? ''));
-        h.cab = 0;
-        h.transpuesta = true;
-        construir();
-        colMeses = h.columnas.filter((c) => c.mes).length;
-      }
-      if (colMeses >= 3) {
-        h.tipo = 'meses';
-        const esIng = puntuaNombre(nombre, 'cobros'); const esGas = puntuaNombre(nombre, 'gastos');
-        h.modo = esIng && !esGas ? 'ingresos' : esGas && !esIng ? 'gastos' : 'auto';
-      } else {
-        let mejor = null;
-        for (const tipo of Object.keys(TIPOS)) {
-          const map = mapear(h, tipo);
-          if (!cumple(tipo, map)) continue;
-          const calidad = Object.keys(map).reduce((a, c) => a + puntuaTitulo(h.columnas[map[c]].titulo, c), 0);
-          let p = calidad + puntuaNombre(nombre, tipo) * 6;
-          // Desempates habituales
-          if (tipo === 'movimientos' && ('ingreso' in map && 'gasto' in map)) p += 6;
-          if (tipo === 'movimientos' && 'importe' in map && h.columnas[map.importe].perfil.negativos && h.columnas[map.importe].perfil.positivos) p += 4;
-          if (tipo === 'cobros' && 'inquilino' in map) p += 3;
-          if (tipo === 'gastos' && ('proveedor' in map || 'categoria' in map)) p += 2;
-          if (tipo === 'pisos' && ('fecha' in mapear(h, 'gastos') || 'importe' in mapear(h, 'gastos'))) p -= 4;
-          if (tipo === 'contratos' && 'renta' in map && puntuaTitulo(h.columnas[map.renta].titulo, 'renta') >= 2) p += 2;
-          if (!mejor || p > mejor.p) mejor = { tipo, map, p };
-        }
-        if (mejor) { h.tipo = mejor.tipo; h.map = mejor.map; }
-      }
-    }
+    if (cab >= 0) prepararHoja(h);
     hojas.push(h);
   }
   // Pisos detectados: los de la app, los de las columnas «piso» y los nombres de hoja que lo parecen
@@ -617,6 +632,54 @@ function modoFilas(h, conocidos) {
 }
 function filasSonPisos(h, conocidos) { return modoFilas(h, conocidos) === 'pisos'; }
 
+// Papel de cada fila en una tabla por meses (editable en el asistente)
+const ROLES = {
+  apartado: 'Piso (apartado)',
+  pisoIngreso: 'Ingresos de un piso',
+  pisoGasto: 'Gastos de un piso',
+  ingreso: 'Ingreso',
+  gasto: 'Gasto',
+  hab: 'Habitación / inquilino',
+  ignorar: 'No importar',
+};
+const GASTO_TXT = /seguro|fac(tura)?s?(_|$)|factura|limpiez|derrama|gasto|comision|reparac|arreglo|comunidad|(^|_)ibi(_|$)|suministro|naturgy|endesa|iberdrola|repsol|(^|_)agua|(^|_)luz|(^|_)gas(_|$)|internet|wifi|fibra|movistar|vodafone|orange|basura|tasa|hipoteca|prestamo|compra|mueble|obra|reforma|gestor|asesor|abogad|notari|impuesto|mantenimiento|devolucion|coste|pago_a/;
+const INGRESO_TXT = /alquiler|renta|air\w*b|booking|reserva|mensualidad|ingreso|cobro|(^|_)inq|inquilino|huesped|(^|_)pa+go_|abono|deposito_recibido|fianza_recibida/;
+/** ¿Esta fila de concepto es un ingreso? Por su texto, la sección en la que está o lo elegido para la tabla. */
+function conceptoEsIngreso(et, seccion, modoTabla) {
+  if (modoTabla === 'ingresos') return true;
+  if (modoTabla === 'gastos') return false;
+  const n = normalizar(et);
+  if (GASTO_TXT.test(n) && !/(^|_)inq/.test(n)) return /alquiler|renta|mensualidad/.test(n) && !/seguro|comision|gasto|pago_a/.test(n);
+  if (INGRESO_TXT.test(n)) return true;
+  return seccion === 'ingresos';
+}
+const numerosMeses = (cols, f) => cols.map((c) => ({ c, x: numL(f[c.i] ?? '') })).filter(({ c, x }) => Number.isFinite(x) && x && !vacio(f[c.i]));
+
+/** Papeles propuestos para cada fila de datos; los cambiados a mano (h.rolesUsuario) mandan. */
+function rolesMeses(h, conocidos, asignacion = new Map()) {
+  const { cols, etiquetaDe } = columnasMeses(h);
+  const modo = modoFilas(h, conocidos);
+  let seccion = h.modo === 'auto' ? null : h.modo;
+  return h.datos.map((f, ri) => {
+    const et = etiquetaDe(f);
+    const nums = numerosMeses(cols, f);
+    let clase = claseEtiqueta(et, conocidos);
+    if (clase === 'piso' && asignacion.get(normalizar(separarHab(et).piso)) === 'concepto') clase = 'concepto';
+    let rol;
+    if (!nums.length) {
+      const n = normalizar(et);
+      if (clase === 'seccion' || /^(ingresos?|gastos?)(_|$)/.test(n)) seccion = /ingreso|cobro|entrada/.test(n) ? 'ingresos' : 'gastos';
+      rol = (modo === 'secciones' || modo === 'conceptos') && clase === 'piso' ? 'apartado' : 'ignorar';
+    } else if (!et || clase === 'total') rol = 'ignorar';
+    else if (modo === 'pisos') rol = conceptoEsIngreso(h.pista, seccion, h.modo) || (h.modo === 'auto' && !seccion && nums.every(({ x }) => x > 0)) ? 'pisoIngreso' : 'pisoGasto';
+    else if (clase === 'piso' && modo === 'secciones') rol = 'apartado';
+    else if (clase === 'hab') rol = 'hab';
+    else rol = nums.every(({ x }) => x < 0) ? 'gasto' : conceptoEsIngreso(et, seccion, h.modo) ? 'ingreso' : 'gasto';
+    return h.rolesUsuario?.has(ri) ? h.rolesUsuario.get(ri) : rol;
+  });
+}
+
+
 /** Todos los nombres de piso que aparecen en el libro, tal cual están escritos (sin repetir). */
 function nombresCrudos(hojas, s) {
   const lista = [];
@@ -625,11 +688,10 @@ function nombresCrudos(hojas, s) {
   for (const h of hojas) {
     if (h.tipo === 'ignorar') continue;
     if (h.tipo === 'meses') {
-      const modo = modoFilas(h, conocidos);
-      const { etiquetaDe, cols } = columnasMeses(h);
-      if (modo === 'pisos') for (const f of h.datos) { if (cols.some((c) => !vacio(f[c.i]))) add(etiquetaDe(f)); }
-      else if (modo === 'secciones') for (const f of h.datos) { const et = etiquetaDe(f); if (claseEtiqueta(et, conocidos) === 'piso') add(et); }
-      if (h.pisoDefecto?.startsWith('nuevo:') && modo !== 'pisos') add(h.pisoDefecto.slice(6));
+      const { etiquetaDe } = columnasMeses(h);
+      const roles = rolesMeses(h, conocidos);
+      h.datos.forEach((f, ri) => { if (['apartado', 'pisoIngreso', 'pisoGasto'].includes(roles[ri])) add(etiquetaDe(f)); });
+      if (h.pisoDefecto?.startsWith('nuevo:')) add(h.pisoDefecto.slice(6));
       continue;
     }
     if ('piso' in h.map) for (const f of h.datos) add(f[h.map.piso]);
@@ -661,7 +723,7 @@ function proponerAsignacion(crudos, s, previa = new Map()) {
 
 /* ───────────── Conversión a las hojas de la app ───────────── */
 
-function convertir(hojas, s, asignacion = new Map()) {
+function convertir(hojas, s, asignacion = new Map(), conocidosExt = null) {
   const out = { pisos: [], unidades: [], contratos: [], gastos: [], cobros: [], reservas: [], hipotecas: [] };
   const notas = []; const avisos = [];
   let duplicados = 0; let omitidas = 0; let abonos = 0;
@@ -752,10 +814,11 @@ function convertir(hojas, s, asignacion = new Map()) {
   for (const h of hojas) {
     if (h.tipo === 'ignorar') continue;
     if (h.tipo === 'meses') { convertirMeses(h); continue; }
-    for (const f of h.datos) {
+    for (const [ri, f] of h.datos.entries()) {
+      if (h.excluidas?.has(ri)) continue; // quitada a mano en el asistente
       // Filas de totales
       const primerTexto = f.find((c) => typeof c === 'string' && c && !/^\d{4}-\d{2}-\d{2}$/.test(c));
-      if (primerTexto && esTotal(primerTexto)) continue;
+      if (primerTexto && esTotal(primerTexto) && !h.excluidas) continue; // (con asistente: lo decide la casilla de la fila)
       const pisoTxt = 'piso' in h.map ? texto(f[h.map.piso]) : '';
       if (pisoTxt && esTotal(pisoTxt)) continue;
       const fecha = fe('fecha') || (('mes' in h.map) && mesDeValor(v(h, f, 'mes'), h.anio) ? `${mesDeValor(v(h, f, 'mes'), h.anio)}-01` : null);
@@ -880,86 +943,55 @@ function convertir(hojas, s, asignacion = new Map()) {
     }
   }
 
+  /** Tabla por meses: cada fila según su papel (piso que encabeza, ingreso, gasto, habitación…). */
   function convertirMeses(h) {
     const { cols, etiquetaDe } = columnasMeses(h);
-    const conocidos = [...(s.pisos || []).map((p) => p.nombre), ...nuevos.map((n) => n.nombre), ...hojas.filter((x) => x.pisoNombre).map((x) => x.pisoNombre)];
-    const modo = modoFilas(h, conocidos);
-    if (modo === 'secciones') return convertirSecciones(h, cols, etiquetaDe, conocidos);
-    const sonPisos = modo === 'pisos';
-    let seccion = h.modo === 'auto' ? null : h.modo;
-    for (const f of h.datos) {
+    // Los mismos pisos conocidos que usa el asistente, para que los papeles de las filas coincidan con lo que se ve
+    const conocidos = conocidosExt || [...(s.pisos || []).map((p) => p.nombre), ...crudoDe.values(), ...hojas.filter((x) => x.pisoNombre).map((x) => x.pisoNombre)];
+    const roles = rolesMeses(h, conocidos, asignacion);
+    let actual = null; // piso del apartado en curso
+    let pendiente = null; // importes de la fila del piso, por si no hay nada debajo
+    const cerrarApartado = () => {
+      if (pendiente && actual) for (const { c, x } of pendiente) { if (x > 0) cobro(actual, `${c.mes}-01`, c.mes, x, '', '', true); else gasto(actual, `${c.mes}-01`, x, h.titulo || h.hojaBase); }
+      pendiente = null;
+    };
+    h.datos.forEach((f, ri) => {
+      const rol = roles[ri];
       const et = etiquetaDe(f);
-      const hayNumeros = cols.some((c) => Number.isFinite(numL(f[c.i] ?? '')) && !vacio(f[c.i]));
-      if (!hayNumeros) { // fila de sección: «INGRESOS», «GASTOS»
-        if (h.modo === 'auto' && et) { if (/ingreso|cobro|renta|alquiler/.test(normalizar(et))) seccion = 'ingresos'; else if (/gasto|pago|coste/.test(normalizar(et))) seccion = 'gastos'; }
-        continue;
+      const nums = numerosMeses(cols, f);
+      if (rol === 'ignorar') return;
+      if (rol === 'apartado') { cerrarApartado(); actual = resolverPiso(et) || actual; pendiente = nums.length ? nums : null; return; }
+      if (rol === 'pisoIngreso' || rol === 'pisoGasto') {
+        const p = resolverPiso(et);
+        if (!p) return;
+        for (const { c, x } of nums) {
+          if (rol === 'pisoIngreso' && x > 0) cobro(p, `${c.mes}-01`, c.mes, x, '', '', true);
+          else gasto(p, `${c.mes}-01`, x, h.titulo || h.hojaBase);
+        }
+        return;
       }
-      if (!et || esTotal(et)) continue;
-      const p = sonPisos ? resolverPiso(et) : (!h.pisoDefecto && pisoPorTexto(et)) || pisoDe(h, f);
-      if (!p) continue;
-      for (const c of cols) {
-        const x = numL(f[c.i] ?? '');
-        if (!Number.isFinite(x) || !x) continue;
+      if (!nums.length) return;
+      pendiente = null; // hay conceptos debajo del piso: su fila era un subtotal
+      const p = actual || (!h.pisoDefecto && pisoPorTexto(et)) || pisoDe(h, f);
+      if (!p) return;
+      const n = normalizar(et);
+      for (const { c, x } of nums) {
         const fecha = `${c.mes}-01`;
-        const esIng = h.modo === 'ingresos' || (h.modo !== 'gastos' && (seccion === 'ingresos' || (!seccion && (sonPisos ? x > 0 && esIngresoTexto(h.pista) : esIngresoTexto(et)))));
-        const concepto = sonPisos ? (esIng ? '' : h.titulo || h.hojaBase) : et;
-        if (esIng && x > 0) {
-          if (p.nuevo && /airbnb|booking|reserva|huesped|turist/.test(normalizar(et))) p.nuevo.turistico = true;
-          cobro(p, fecha, c.mes, x, '', concepto, true);
-        }
-        else gasto(p, fecha, x, concepto);
+        if (rol === 'hab') {
+          // «H1 DIANTO» → habitación 1, inquilino Dianto
+          const m = n.match(HAB_RE);
+          const hab = m ? `Habitación ${m[2].toUpperCase()}` : normHab(et) || et;
+          const quien = texto(et).replace(/^\s*(h|hab\.?|habitaci[oó]n|room|cuarto)\s*(\d{1,2}|[a-f])\b[\s.:,–-]*/i, '').trim();
+          if (p.nuevo) p.nuevo.habitaciones.add(hab);
+          if (x > 0) cobro(p, fecha, c.mes, x, quien, `Renta ${hab.toLowerCase()}${quien ? ` (${quien})` : ''}`, true, { habitacion: hab });
+          else gasto(p, fecha, x, et);
+        } else if (rol === 'ingreso' && x > 0) {
+          if (p.nuevo && /air\w*b|booking|reserva|huesped|turist/.test(n)) p.nuevo.turistico = true;
+          cobro(p, fecha, c.mes, x, '', et, true);
+        } else gasto(p, fecha, x, et);
       }
-    }
-  }
-
-  /** Filas de piso como apartados y, debajo, sus conceptos (ingresos y gastos) y habitaciones. */
-  function convertirSecciones(h, cols, etiquetaDe, conocidos) {
-    const numeros = (f) => cols.map((c) => ({ c, x: numL(f[c.i] ?? '') })).filter(({ c, x }) => Number.isFinite(x) && x && !vacio(f[c.i]));
-    // Agrupar: cada fila de piso abre un apartado
-    const grupos = [];
-    let actual = { piso: null, filaPiso: null, filas: [] };
-    grupos.push(actual);
-    for (const f of h.datos) {
-      const et = etiquetaDe(f);
-      let clase = claseEtiqueta(et, conocidos);
-      if (clase === 'piso' && asignacion.get(normalizar(separarHab(et).piso)) === 'concepto') clase = 'concepto'; // «No es un piso» en el asistente
-      if (clase === 'piso') { actual = { piso: et, filaPiso: f, filas: [] }; grupos.push(actual); continue; }
-      actual.filas.push({ f, et, clase });
-    }
-    let seccion = h.modo === 'auto' ? null : h.modo;
-    for (const g of grupos) {
-      if (!g.piso && !g.filas.some((r) => numeros(r.f).length)) continue; // nada antes del primer piso
-      const p = g.piso ? resolverPiso(g.piso) : pisoDe(h, g.filas[0]?.f || []);
-      if (!p) continue;
-      const conDatos = g.filas.filter((r) => (r.clase === 'concepto' || r.clase === 'hab') && numeros(r.f).length);
-      // La fila del piso con importes y sin conceptos debajo: son los ingresos del piso; si hay conceptos, es un subtotal
-      if (g.filaPiso && !conDatos.length) for (const { c, x } of numeros(g.filaPiso)) { if (x > 0) cobro(p, `${c.mes}-01`, c.mes, x, '', '', true); else gasto(p, `${c.mes}-01`, x, g.piso); }
-      for (const r of g.filas) {
-        if (r.clase === 'seccion') { const n = normalizar(r.et); seccion = /ingreso|cobro|entrada/.test(n) ? 'ingresos' : 'gastos'; continue; }
-        if (r.clase === 'total' || r.clase === 'vacia') continue;
-        for (const { c, x } of numeros(r.f)) {
-          const fecha = `${c.mes}-01`;
-          if (r.clase === 'hab') {
-            // «H1 DIANTO» → habitación 1, inquilino Dianto
-            const m = normalizar(r.et).match(HAB_RE);
-            const hab = `Habitación ${m[2].toUpperCase()}`;
-            const quien = texto(r.et).replace(/^\s*(h|hab\.?|habitaci[oó]n|room|cuarto)\s*(\d{1,2}|[a-f])\b[\s.:,–-]*/i, '').trim();
-            if (p.nuevo) p.nuevo.habitaciones.add(hab);
-            if (x > 0) cobro(p, fecha, c.mes, x, quien, `Renta ${hab.toLowerCase()}${quien ? ` (${quien})` : ''}`, true, { habitacion: hab });
-            else gasto(p, fecha, x, r.et);
-            continue;
-          }
-          const n = normalizar(r.et);
-          const esGastoTxt = /seguro|fac(tura)?s?(_|$)|factura|limpiez|derrama|gasto|comision|reparac|arreglo|comunidad|(^|_)ibi(_|$)|suministro|naturgy|endesa|iberdrola|repsol|(^|_)agua|internet|wifi|fibra|movistar|vodafone|orange|basura|tasa|hipoteca|prestamo|compra|mueble|obra|reforma|gestor|asesor|abogad|notari|impuesto|mantenimiento|devolucion/.test(n) && !/inq/.test(n);
-          const esIngTxt = /alquiler|renta|air\w*b|booking|reserva|mensualidad|ingreso|cobro|inq|huesped|(^|_)pa+go_/.test(n);
-          const esIng = x > 0 && (h.modo === 'ingresos' || (h.modo !== 'gastos' && (esGastoTxt ? false : esIngTxt ? true : seccion === 'ingresos')));
-          if (esIng) {
-            if (p.nuevo && /air\w*b|booking|reserva|huesped|turist/.test(n)) p.nuevo.turistico = true;
-            cobro(p, fecha, c.mes, x, '', r.et, true);
-          } else gasto(p, fecha, x, r.et);
-        }
-      }
-    }
+    });
+    cerrarApartado();
   }
 
   // Pisos nuevos: modalidad por lo que se ha visto
@@ -1045,29 +1077,96 @@ function opcionesPiso(h, s, detectados) {
   return ops.map(([k, t]) => html`<option value="${k}" ${k === sel ? 'selected' : ''}>${t}</option>`);
 }
 
-function tarjeta(h, i, s, detectados) {
+/** Lo que saldrá de una tabla con lo elegido ahora: para el resumen en vivo de cada tarjeta. */
+function resumenTabla(h, s, asignacion, conocidos) {
+  if (h.tipo === 'ignorar') return null;
+  s ||= { pisos: [], gastos: [], cobros: [], reservas: [], contratos: [], hipotecas: [] };
+  if (TIPOS[h.tipo] && !cumple(h.tipo, h.map)) return { error: true };
+  try {
+    const { out, duplicados } = convertir([h], s, asignacion, conocidos);
+    const suma = (l, k) => l.reduce((a, x) => a + (Number(x[k]) || 0), 0);
+    return {
+      gastos: out.gastos.length, gastosE: suma(out.gastos, 'Importe'),
+      cobros: out.cobros.length, cobrosE: suma(out.cobros, 'Importe'),
+      reservas: out.reservas.length, contratos: out.contratos.length, hipotecas: out.hipotecas.length,
+      pisos: out.pisos.filter((x) => !x.ID).length, duplicados,
+    };
+  } catch (e) { console.error(e); return null; }
+}
+function textoResumen(r) {
+  if (!r) return '';
+  if (r.error) return 'Faltan columnas imprescindibles';
+  const partes = [];
+  if (r.cobros) partes.push(`${r.cobros} ingresos (${fmtEUR(r.cobrosE)})`);
+  if (r.gastos) partes.push(`${r.gastos} gastos (${fmtEUR(r.gastosE)})`);
+  if (r.reservas) partes.push(`${r.reservas} reservas`);
+  if (r.contratos) partes.push(`${r.contratos} inquilinos`);
+  if (r.hipotecas) partes.push(`${r.hipotecas} hipotecas`);
+  if (r.pisos && !partes.length) partes.push(`${r.pisos} pisos`);
+  if (r.duplicados) partes.push(`${r.duplicados} ya estaban`);
+  return partes.join(' · ') || 'No sale nada: revisa las columnas o los papeles de las filas';
+}
+const corto = (v) => { const t = vacio(v) ? '' : typeof v === 'number' ? (Number.isInteger(v) ? String(v) : fmtEUR(v).replace(/\s?€$/, '')) : String(v); return t.length > 28 ? `${t.slice(0, 27)}…` : t; };
+const MAX_FILAS = 300;
+
+function tarjeta(h, i, s, detectados, asignacion, conocidos) {
   const T = TIPOS[h.tipo];
-  const ejemplo = (c) => c.perfil.ejemplos.slice(0, 2).join(' · ');
   const tipos = Object.keys(ETIQUETA_TIPO).filter((k) => k !== 'meses' || h.columnas.filter((c) => c.mes).length >= 2);
   const pidePiso = h.tipo === 'meses' || (T && h.tipo !== 'pisos' && !('piso' in h.map));
+  const r = resumenTabla(h, s, asignacion, conocidos);
+  const abierta = h.abierta ?? true;
+  // Fila de títulos: las primeras filas de la tabla original, para poder elegir otra
+  const opcionesCab = h.filas.slice(0, 15).map((f, k) => [k, f.filter((c) => !vacio(c)).slice(0, 4).map(corto).join(' · ')]).filter(([, t]) => t);
+  const cabSel = html`<label class="field"><span class="field-label">Fila de títulos</span><select name="cab:${i}">${opcionesCab.map(([k, t]) => html`<option value="${k}" ${k === h.cab ? 'selected' : ''}>Fila ${k + 1}: ${t}</option>`)}</select></label>`;
+  let cuerpo = '';
+  if (h.tipo === 'meses') {
+    const { cols, etiquetaDe } = columnasMeses(h);
+    const roles = rolesMeses(h, conocidos, asignacion);
+    const vis = cols.slice(0, 4);
+    cuerpo = html`
+      <div class="form-grid">
+        <label class="field"><span class="field-label">Año</span><input name="y:${i}" type="number" min="1990" max="2100" value="${h.anio}"></label>
+        <label class="field"><span class="field-label">Cada fila es</span><select name="e:${i}">${[['auto', 'Detectar'], ['secciones', 'Pisos con sus conceptos debajo'], ['conceptos', 'Un concepto (luz, comunidad…)'], ['pisos', 'Un piso']].map(([k, t]) => html`<option value="${k}" ${k === h.etiquetas ? 'selected' : ''}>${t}</option>`)}</select></label>
+        <label class="field span2"><span class="field-label">Los importes son</span><select name="m:${i}">${[['auto', 'Detectar por el concepto (alquiler = ingreso, luz = gasto…)'], ['gastos', 'Todos gastos'], ['ingresos', 'Todos ingresos']].map(([k, t]) => html`<option value="${k}" ${k === h.modo ? 'selected' : ''}>${t}</option>`)}</select></label>
+      </div>
+      <p class="small muted">Elige qué es cada fila. Lo que pongas como «Piso» se aplica a las filas de debajo hasta el siguiente piso.</p>
+      <div class="libre-tabla"><table>
+        <thead><tr><th>Esta fila es</th><th>${h.columnas[columnasMeses(h).iEtiqueta]?.titulo || 'Fila'}</th>${vis.map((c) => html`<th class="num">${h.columnas[c.i].titulo}</th>`)}${cols.length > vis.length ? html`<th>…</th>` : ''}</tr></thead>
+        <tbody>${h.datos.slice(0, MAX_FILAS).map((f, ri) => {
+          const rol = roles[ri];
+          const conNumeros = numerosMeses(cols, f).length > 0;
+          const ops = Object.entries(ROLES).filter(([k]) => conNumeros || k === 'apartado' || k === 'ignorar');
+          return html`<tr class="rol-${rol}"><td><select name="r:${i}:${ri}" data-rol>${ops.map(([k, t]) => html`<option value="${k}" ${k === rol ? 'selected' : ''}>${t}</option>`)}</select></td>
+            <td class="libre-et">${corto(etiquetaDe(f))}</td>${vis.map((c) => html`<td class="num">${corto(f[c.i])}</td>`)}${cols.length > vis.length ? html`<td></td>` : ''}</tr>`;
+        })}</tbody></table></div>
+      ${h.datos.length > MAX_FILAS ? html`<p class="small muted">Se muestran ${MAX_FILAS} de ${h.datos.length} filas; el resto se importa con lo propuesto.</p>` : ''}`;
+  } else if (T) {
+    const cols = h.columnas.map((c, ci) => ({ c, ci })).filter(({ c }) => c.perfil.n);
+    const campoDe = (ci) => Object.keys(h.map).find((k) => h.map[k] === ci) || '';
+    cuerpo = html`
+      <p class="small muted">Arriba de cada columna, elige qué dato es. Desmarca las filas que no quieras importar.</p>
+      <div class="libre-tabla"><table>
+        <thead>
+          <tr><th></th>${cols.map(({ ci }) => html`<th><select name="c:${i}:${ci}" class="${campoDe(ci) ? 'usada' : ''}"><option value="">— no importar —</option>${T.campos.map((campo) => html`<option value="${campo}" ${h.map[campo] === ci ? 'selected' : ''}>${CAMPOS[campo].t}</option>`)}</select></th>`)}</tr>
+          <tr class="libre-tit"><th></th>${cols.map(({ c }) => html`<th>${corto(c.titulo)}</th>`)}</tr>
+        </thead>
+        <tbody>${h.datos.slice(0, MAX_FILAS).map((f, ri) => html`<tr class="${h.excluidas?.has(ri) ? 'fuera' : ''}"><td><input type="checkbox" name="x:${i}:${ri}" data-fila ${h.excluidas?.has(ri) ? '' : 'checked'} aria-label="Importar esta fila"></td>${cols.map(({ ci }) => html`<td class="${campoDe(ci) ? '' : 'sin'}">${corto(f[ci])}</td>`)}</tr>`)}</tbody>
+      </table></div>
+      ${h.datos.length > MAX_FILAS ? html`<p class="small muted">Se muestran ${MAX_FILAS} de ${h.datos.length} filas; el resto se importa.</p>` : ''}
+      ${cumple(h.tipo, h.map) ? '' : html`<p class="import-err small">Faltan columnas imprescindibles: ${T.req.filter((alt) => !alt.some((c) => c in h.map)).map((alt) => alt.map((c) => CAMPOS[c].t).join(' o ')).join(', ')}.</p>`}`;
+  }
   return html`
-    <section class="libre-hoja" data-hoja="${i}">
-      <header><b>${h.nombre}</b><span class="muted small">${h.datos.length} filas</span></header>
-      <label class="field"><span class="field-label">Esta hoja contiene</span>
-        <select name="t:${i}" data-libre-tipo="${i}">${tipos.map((k) => html`<option value="${k}" ${k === h.tipo ? 'selected' : ''}>${ETIQUETA_TIPO[k]}</option>`)}</select></label>
-      ${h.tipo === 'ignorar' ? '' : h.tipo === 'meses' ? html`
-        <div class="form-grid">
-          <label class="field"><span class="field-label">Año</span><input name="y:${i}" type="number" min="1990" max="2100" value="${h.anio}"></label>
-          <label class="field"><span class="field-label">Cada fila es</span><select name="e:${i}">${[['auto', 'Detectar'], ['secciones', 'Pisos con sus conceptos debajo'], ['conceptos', 'Un concepto (luz, comunidad…)'], ['pisos', 'Un piso']].map(([k, t]) => html`<option value="${k}" ${k === h.etiquetas ? 'selected' : ''}>${t}</option>`)}</select></label>
-          <label class="field span2"><span class="field-label">Los importes son</span><select name="m:${i}">${[['auto', 'Detectar (ingresos si dicen alquiler, renta…)'], ['gastos', 'Gastos'], ['ingresos', 'Ingresos']].map(([k, t]) => html`<option value="${k}" ${k === h.modo ? 'selected' : ''}>${t}</option>`)}</select></label>
-        </div>` : html`
-        <div class="libre-cols">
-          ${h.columnas.map((c, ci) => (c.perfil.n ? html`<label class="libre-col field"><span><b>${c.titulo}</b><small class="muted">${ejemplo(c)}</small></span>
-            <select name="c:${i}:${ci}"><option value="">— no importar —</option>${T.campos.map((campo) => html`<option value="${campo}" ${h.map[campo] === ci ? 'selected' : ''}>${CAMPOS[campo].t}</option>`)}</select></label>` : ''))}
-        </div>
-        ${cumple(h.tipo, h.map) ? '' : html`<p class="import-err small">Faltan columnas imprescindibles: ${T.req.filter((alt) => !alt.some((c) => c in h.map)).map((alt) => alt.map((c) => CAMPOS[c].t).join(' o ')).join(', ')}.</p>`}`}
-      ${pidePiso && h.tipo !== 'ignorar' ? html`<label class="field"><span class="field-label">Piso de estas filas</span><select name="p:${i}">${opcionesPiso(h, s, detectados)}</select></label>` : ''}
-    </section>`;
+    <details class="libre-hoja" data-hoja="${i}" ${abierta ? 'open' : ''}>
+      <summary><span class="libre-nombre"><b>${h.nombre}</b><small class="muted">${ETIQUETA_TIPO[h.tipo]} · ${h.datos.length} filas</small></span>
+        <span class="libre-res ${r?.error ? 'import-err' : ''}">${h.tipo === 'ignorar' ? 'No se importa' : textoResumen(r)}</span></summary>
+      <div class="form-grid">
+        <label class="field"><span class="field-label">Esta tabla contiene</span>
+          <select name="t:${i}" data-libre-tipo="${i}">${tipos.map((k) => html`<option value="${k}" ${k === h.tipo ? 'selected' : ''}>${ETIQUETA_TIPO[k]}</option>`)}</select></label>
+        ${opcionesCab.length > 1 ? cabSel : ''}
+        ${pidePiso && h.tipo !== 'ignorar' ? html`<label class="field span2"><span class="field-label">${h.tipo === 'meses' ? 'Piso de las filas que no estén debajo de un piso' : 'Piso de estas filas'}</span><select name="p:${i}">${opcionesPiso(h, s, detectados)}</select></label>` : ''}
+      </div>
+      ${h.tipo === 'ignorar' ? '' : cuerpo}
+    </details>`;
 }
 
 function leerPropuesta(form, hojas) {
@@ -1079,6 +1178,8 @@ function leerPropuesta(form, hojas) {
     if (!TIPOS[h.tipo]) return;
     const map = {};
     h.columnas.forEach((c, ci) => { const x = el(`c:${i}:${ci}`)?.value; if (x && !(x in map)) map[x] = ci; });
+    // Una columna que no está en pantalla (sin datos) conserva lo que tenía
+    for (const [k, ci] of Object.entries(h.map)) if (!(k in map) && !el(`c:${i}:${ci}`)) map[k] = ci;
     h.map = map;
   });
 }
@@ -1090,6 +1191,18 @@ export function importarLibre(libro, nombreArchivo) {
   if (!hojas.length) return toast('El archivo no tiene datos que importar.', { tipo: 'warn' });
   for (const h of hojas) h.archivo = nombreArchivo;
   let pasadosCobrados = true;
+  if (hojas.length > 3) hojas.forEach((h, k) => { h.abierta = k === 0 || !!(TIPOS[h.tipo] && !cumple(h.tipo, h.map)); });
+  const conocidosDe = () => [...(s?.pisos || []).map((p) => p.nombre), ...crudos, ...hojas.filter((x) => x.pisoNombre).map((x) => x.pisoNombre)];
+  const resumenGlobal = () => {
+    const base = s || { pisos: [], gastos: [], cobros: [], reservas: [], contratos: [], hipotecas: [] };
+    const activas = hojas.filter((h) => h.tipo !== 'ignorar' && (!TIPOS[h.tipo] || cumple(h.tipo, h.map)));
+    if (!activas.length) return html`<p class="import-err">No hay ninguna tabla para importar.</p>`;
+    let r;
+    try { r = convertir(activas, base, asignacion, conocidosDe()); } catch (e) { console.error(e); return ''; }
+    const sum = (l) => l.reduce((a, x) => a + (Number(x.Importe) || 0), 0);
+    const pisosN = r.out.pisos.filter((x) => !x.ID).length;
+    return html`<b>Se importará:</b> ${[pisosN ? `${pisosN} pisos nuevos` : '', r.out.contratos.length ? `${r.out.contratos.length} inquilinos` : '', r.out.cobros.length ? `${r.out.cobros.length} ingresos (${fmtEUR(sum(r.out.cobros))})` : '', r.out.gastos.length ? `${r.out.gastos.length} gastos (${fmtEUR(sum(r.out.gastos))})` : '', r.out.reservas.length ? `${r.out.reservas.length} reservas` : '', r.out.hipotecas.length ? `${r.out.hipotecas.length} hipotecas` : ''].filter(Boolean).join(' · ') || 'nada nuevo'}${r.duplicados ? html` <span class="muted">(${r.duplicados} filas ya estaban en la app)</span>` : ''}`;
+  };
   let asignacion = new Map();
   let crudos = [];
   const pintar = () => {
@@ -1107,7 +1220,8 @@ export function importarLibre(libro, nombreArchivo) {
       ${crudos.length ? html`<section class="libre-hoja"><header><b>Pisos que aparecen en tu Excel</b><span class="muted small">${nuevosN.length ? `${nuevosN.length} nuevos` : 'todos ya existen'}</span></header>
         <div class="libre-cols">${crudos.map((t, k) => html`<label class="libre-col field"><span><b>${t}</b></span><select name="pm:${k}">${opciones(t)}</select></label>`)}</div></section>` : ''}
       ${hojas.some((h) => h.tipo === 'contratos') ? html`<label class="check libre-check"><input type="checkbox" name="pasados" ${pasadosCobrados ? 'checked' : ''}><span>Los meses ya pasados de los contratos que no traen cobros en el Excel están <b>cobrados</b> (si no, aparecerán como impagados)</span></label>` : ''}
-      <div class="libre-hojas">${hojas.map((h, i) => tarjeta(h, i, s, nuevosN))}</div>`;
+      <div class="libre-total">${resumenGlobal()}</div>
+      <div class="libre-hojas">${hojas.map((h, i) => tarjeta(h, i, s, nuevosN, asignacion, conocidosDe()))}</div>`;
   };
   const leerAsignacion = (f) => {
     crudos.forEach((t, k) => { const x = f.elements[`pm:${k}`]?.value; if (x) asignacion.set(normalizar(t), x); });
@@ -1124,29 +1238,42 @@ export function importarLibre(libro, nombreArchivo) {
       if (hojas.every((h) => h.tipo === 'ignorar')) { toast('No has elegido ninguna hoja para importar.', { tipo: 'warn' }); return false; }
       const fallida = hojas.find((h) => TIPOS[h.tipo] && !cumple(h.tipo, h.map));
       if (fallida) { toast(`En «${fallida.nombre}» faltan columnas imprescindibles.`, { tipo: 'warn' }); return false; }
-      aplicar(hojas, nombreArchivo, asignacion, { pasadosCobrados });
+      aplicar(hojas, nombreArchivo, asignacion, { pasadosCobrados, conocidos: conocidosDe() });
       return false; // el resumen sustituye a este diálogo
     },
   });
   // Al cambiar el tipo de una hoja se vuelven a proponer sus columnas; al cambiar columnas, se repinta el aviso
+  form.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (d.matches?.('details[data-hoja]')) hojas[Number(d.dataset.hoja)].abierta = d.open;
+  }, true);
   form.addEventListener('change', (e) => {
     const sel = e.target;
-    if (!sel.name || sel.name.startsWith('y:')) return;
+    if (!sel.name) return;
+    const [pref, a, b] = sel.name.split(':');
+    const h = hojas[Number(a)];
     const body = form.querySelector('.dlg-body');
     const scroll = body.scrollTop;
-    leerPropuesta(form, hojas);
-    leerAsignacion(form);
-    if (sel.dataset.libreTipo != null) { const h = hojas[Number(sel.dataset.libreTipo)]; h.map = mapear(h, h.tipo); }
+    if (pref === 'r') h.rolesUsuario.set(Number(b), sel.value); // papel de una fila
+    else if (pref === 'x') { if (sel.checked) h.excluidas.delete(Number(b)); else h.excluidas.add(Number(b)); }
+    else if (pref === 'cab') { h.cab = Number(sel.value); construirHoja(h); clasificarHoja(h, false); }
+    else {
+      const tipoAntes = h?.tipo;
+      leerPropuesta(form, hojas);
+      leerAsignacion(form);
+      if (pref === 't' && h) { h.map = mapear(h, h.tipo); h.rolesUsuario = new Map(); if (tipoAntes === 'ignorar') h.abierta = true; }
+      if ((pref === 'e' || pref === 'm' || pref === 'y') && h) h.rolesUsuario = new Map();
+    }
     body.innerHTML = String(pintar());
     body.scrollTop = scroll;
   });
 }
 
-async function aplicar(hojas, nombreArchivo, asignacion, { pasadosCobrados = true } = {}) {
+async function aplicar(hojas, nombreArchivo, asignacion, { pasadosCobrados = true, conocidos = null } = {}) {
   try {
     const base = app.s;
     const s = base || { pisos: [], gastos: [], cobros: [], reservas: [], contratos: [] };
-    const { out, notas, avisos, duplicados } = convertir(hojas, s, asignacion);
+    const { out, notas, avisos, duplicados } = convertir(hojas.filter((h) => h.tipo !== 'ignorar'), s, asignacion, conocidos);
     const libro = aLibro(out);
     if (!Object.keys(libro).length) {
       if (duplicados) cerrarDialogo();

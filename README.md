@@ -97,7 +97,12 @@ documentos (ZIP)** y restáurala con «Restaurar copia».
 - **Categorías de gasto** por el concepto o el proveedor (comunidad, IBI, Endesa → suministros,
   fontanero → reparación, Mapfre → seguro…). Las cuotas de hipoteca se importan como no deducibles.
 
-Todo se puede corregir con desplegables antes de continuar. Después se ve el resumen habitual y se
+El asistente enseña cada tabla tal como está en el Excel y deja corregirlo todo antes de continuar:
+qué contiene cada tabla, cuál es su fila de títulos, qué dato es cada columna (desplegable encima de
+cada una), qué filas se importan (casillas; los totales salen desmarcados) y, en las tablas por meses,
+qué es cada fila: piso que encabeza lo de debajo, ingreso, gasto, habitación con su inquilino o no
+importar. Cada tabla muestra en vivo cuántos ingresos y gastos va a crear y por cuánto, y arriba se ve
+el total de la importación. Después se ve el resumen habitual y se
 puede deshacer. Los cobros de un inquilino se enlazan a su contrato y lo que ya estaba en la app no
 se duplica, así que importar dos veces el mismo archivo no repite nada.
 
