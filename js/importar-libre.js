@@ -578,15 +578,44 @@ function columnasMeses(h) {
   return { cols, iEtiqueta, etiquetaDe: (f) => texto(f[iEtiqueta >= 0 ? iEtiqueta : 0]) };
 }
 const PARECE_PISO = /^(piso|apartamento|apto|casa|atico|estudio|local|vivienda|chalet|duplex|loft|habitacion)(_|$)/;
-/** ¿Las filas de una tabla por meses son pisos (y no conceptos)? */
-function filasSonPisos(h, conocidos) {
-  if (h.etiquetas !== 'auto') return h.etiquetas === 'pisos';
-  const { etiquetaDe, iEtiqueta } = columnasMeses(h);
-  if (iEtiqueta >= 0 && puntuaTitulo(h.columnas[iEtiqueta].titulo, 'piso') >= 2) return true;
-  const et = h.datos.map(etiquetaDe).filter((t) => t && !esTotal(t) && !/^(ingreso|gasto)s?$/.test(normalizar(t)));
-  const pareceDir = (t) => h.transpuesta && /[a-z].*\d/.test(normalizar(t)) && !/\b20\d{2}\b/.test(t);
-  return et.length > 0 && et.filter((t) => conocidos.some((n) => mismoPiso(n, t)) || PARECE_PISO.test(normalizar(t)) || pareceDir(t)).length / et.length >= 0.6;
+// Palabras de concepto (ingresos o gastos): una fila con ellas no es un piso
+const CONCEPTO_RE = /alquiler|renta|air\w*b\w*|booking|reserva|fac(tura)?s?(_|$)|factura|limpiez|derrama|(^|_)luz|agua|(^|_)gas(_|$)|butano|internet|wifi|fibra|telefon|movil|comunidad|(^|_)ibi(_|$)|seguro|poliza|gasto|mensualidad|(^|_)pa+go|cobro|ingreso|reparac|arreglo|hipoteca|prestamo|comision|basura|tasa|naturgy|endesa|iberdrola|repsol|movistar|vodafone|orange|digi|mantenimiento|obra|reforma|mueble|compra|amazon|ikea|suministro|gestor|asesor|abogad|notari|impuesto|irpf|iva|nomina|fianza|deposito|extra|varios|otros|devolucion|transferencia|recibo/;
+// Habitación con su inquilino: «H1 DIANTO», «Hab 2 - Mamadou», «Habitación 3 Ana»
+const HAB_RE = /^(h|hab|habitacion|room|cuarto)_?(\d{1,2}|[a-f])(_|$)/;
+
+/** Qué es la etiqueta de una fila: piso, habitación (con inquilino), concepto, sección (INGRESOS) o total. */
+function claseEtiqueta(t, conocidos = []) {
+  const n = normalizar(t);
+  if (!n) return 'vacia';
+  if (esTotal(t)) return 'total';
+  if (/^(ingresos?|gastos?|cobros?|pagos?|entradas|salidas)$/.test(n)) return 'seccion';
+  if (HAB_RE.test(n)) return 'hab';
+  if (PARECE_PISO.test(n) && !/^habitacion/.test(n)) return 'piso'; // «PISO 3: MARQUÉS PICKMAN», «Apartamento centro»
+  if (CONCEPTO_RE.test(n)) return 'concepto';
+  if (/^(c|cl|calle|avda|av|avenida|plaza|pza|pl|paseo|ronda|camino|ctra|carretera|urb|urbanizacion|travesia|glorieta)_/.test(n)) return 'piso';
+  if (conocidos.some((k) => mismoPiso(k, t) && tokens(k).some((x) => tokens(t).includes(x)))) return 'piso';
+  return 'concepto';
 }
+
+/**
+ * Cómo leer las filas de una tabla por meses:
+ * 'pisos' (cada fila es un piso), 'conceptos' (cada fila es un concepto del mismo piso) o
+ * 'secciones' (filas de piso, y debajo de cada una sus conceptos y habitaciones).
+ */
+function modoFilas(h, conocidos) {
+  if (h.etiquetas && h.etiquetas !== 'auto') return h.etiquetas;
+  const { etiquetaDe } = columnasMeses(h);
+  const clases = h.datos.map((f) => claseEtiqueta(etiquetaDe(f), conocidos));
+  const nP = clases.filter((c) => c === 'piso').length;
+  const nC = clases.filter((c) => c === 'concepto' || c === 'hab').length;
+  if (nP && nC) return 'secciones';
+  if (nP) return 'pisos';
+  // Sin palabras de piso: «Mayor 12», «Sol 22»… parecen direcciones si casi todas llevan número
+  const et = h.datos.map(etiquetaDe).filter((t) => t && !esTotal(t));
+  const dir = et.filter((t) => /[a-z].*\d/.test(normalizar(t)) && !/\b20\d{2}\b/.test(t) && !CONCEPTO_RE.test(normalizar(t)));
+  return et.length && dir.length / et.length >= 0.6 ? 'pisos' : 'conceptos';
+}
+function filasSonPisos(h, conocidos) { return modoFilas(h, conocidos) === 'pisos'; }
 
 /** Todos los nombres de piso que aparecen en el libro, tal cual están escritos (sin repetir). */
 function nombresCrudos(hojas, s) {
@@ -595,7 +624,14 @@ function nombresCrudos(hojas, s) {
   const conocidos = [...(s?.pisos || []).map((p) => p.nombre), ...hojas.filter((x) => x.pisoNombre).map((x) => x.pisoNombre)];
   for (const h of hojas) {
     if (h.tipo === 'ignorar') continue;
-    if (h.tipo === 'meses' && filasSonPisos(h, conocidos)) { const { etiquetaDe, cols } = columnasMeses(h); for (const f of h.datos) if (cols.some((c) => !vacio(f[c.i]))) add(etiquetaDe(f)); continue; }
+    if (h.tipo === 'meses') {
+      const modo = modoFilas(h, conocidos);
+      const { etiquetaDe, cols } = columnasMeses(h);
+      if (modo === 'pisos') for (const f of h.datos) { if (cols.some((c) => !vacio(f[c.i]))) add(etiquetaDe(f)); }
+      else if (modo === 'secciones') for (const f of h.datos) { const et = etiquetaDe(f); if (claseEtiqueta(et, conocidos) === 'piso') add(et); }
+      if (h.pisoDefecto?.startsWith('nuevo:') && modo !== 'pisos') add(h.pisoDefecto.slice(6));
+      continue;
+    }
     if ('piso' in h.map) for (const f of h.datos) add(f[h.map.piso]);
     else if (h.tipo === 'pisos' && 'direccion' in h.map) for (const f of h.datos) add(f[h.map.direccion]);
     if (h.pisoDefecto?.startsWith('nuevo:')) add(h.pisoDefecto.slice(6));
@@ -639,6 +675,7 @@ function convertir(hojas, s, asignacion = new Map()) {
     // Lo elegido en el asistente: un piso de la app, el mismo que otro nombre del Excel o uno nuevo
     let a = asignacion.get(normalizar(t));
     for (let i = 0; i < 6 && a?.startsWith('igual:'); i++) { const k = a.slice(6); t = crudoDe.get(k) || t; a = asignacion.get(k); }
+    if (a === 'concepto') return resolverPiso('Piso sin asignar');
     if (a && a !== 'nuevo') { const p = (s.pisos || []).find((x) => x.id === a); if (p) return { nombre: p.nombre, existente: p }; }
     if (a === 'nuevo') {
       let n = nuevos.find((x) => normalizar(x.nombre) === normalizar(t));
@@ -665,7 +702,7 @@ function convertir(hojas, s, asignacion = new Map()) {
     return hits.length === 1 ? resolverPiso(hits[0]) : null;
   };
   const pisoDe = (h, f) => {
-    if ('piso' in h.map && !vacio(f[h.map.piso])) return { ...resolverPiso(f[h.map.piso]), hab: separarHab(f[h.map.piso]).hab };
+    if ('piso' in h.map && !vacio(f[h.map.piso]) && asignacion.get(normalizar(separarHab(f[h.map.piso]).piso)) !== 'concepto') return { ...resolverPiso(f[h.map.piso]), hab: separarHab(f[h.map.piso]).hab };
     const d = h.pisoDefecto;
     if (!d) return pisoPorTexto(`${f.filter((c) => typeof c === 'string').join(' ')} ${h.titulo || ''}`) || resolverPiso('Piso sin asignar');
     if (d.startsWith('nuevo:')) return resolverPiso(d.slice(6));
@@ -845,7 +882,10 @@ function convertir(hojas, s, asignacion = new Map()) {
 
   function convertirMeses(h) {
     const { cols, etiquetaDe } = columnasMeses(h);
-    const sonPisos = filasSonPisos(h, [...(s.pisos || []).map((p) => p.nombre), ...nuevos.map((n) => n.nombre), ...hojas.filter((x) => x.pisoNombre).map((x) => x.pisoNombre)]);
+    const conocidos = [...(s.pisos || []).map((p) => p.nombre), ...nuevos.map((n) => n.nombre), ...hojas.filter((x) => x.pisoNombre).map((x) => x.pisoNombre)];
+    const modo = modoFilas(h, conocidos);
+    if (modo === 'secciones') return convertirSecciones(h, cols, etiquetaDe, conocidos);
+    const sonPisos = modo === 'pisos';
     let seccion = h.modo === 'auto' ? null : h.modo;
     for (const f of h.datos) {
       const et = etiquetaDe(f);
@@ -868,6 +908,56 @@ function convertir(hojas, s, asignacion = new Map()) {
           cobro(p, fecha, c.mes, x, '', concepto, true);
         }
         else gasto(p, fecha, x, concepto);
+      }
+    }
+  }
+
+  /** Filas de piso como apartados y, debajo, sus conceptos (ingresos y gastos) y habitaciones. */
+  function convertirSecciones(h, cols, etiquetaDe, conocidos) {
+    const numeros = (f) => cols.map((c) => ({ c, x: numL(f[c.i] ?? '') })).filter(({ c, x }) => Number.isFinite(x) && x && !vacio(f[c.i]));
+    // Agrupar: cada fila de piso abre un apartado
+    const grupos = [];
+    let actual = { piso: null, filaPiso: null, filas: [] };
+    grupos.push(actual);
+    for (const f of h.datos) {
+      const et = etiquetaDe(f);
+      let clase = claseEtiqueta(et, conocidos);
+      if (clase === 'piso' && asignacion.get(normalizar(separarHab(et).piso)) === 'concepto') clase = 'concepto'; // «No es un piso» en el asistente
+      if (clase === 'piso') { actual = { piso: et, filaPiso: f, filas: [] }; grupos.push(actual); continue; }
+      actual.filas.push({ f, et, clase });
+    }
+    let seccion = h.modo === 'auto' ? null : h.modo;
+    for (const g of grupos) {
+      if (!g.piso && !g.filas.some((r) => numeros(r.f).length)) continue; // nada antes del primer piso
+      const p = g.piso ? resolverPiso(g.piso) : pisoDe(h, g.filas[0]?.f || []);
+      if (!p) continue;
+      const conDatos = g.filas.filter((r) => (r.clase === 'concepto' || r.clase === 'hab') && numeros(r.f).length);
+      // La fila del piso con importes y sin conceptos debajo: son los ingresos del piso; si hay conceptos, es un subtotal
+      if (g.filaPiso && !conDatos.length) for (const { c, x } of numeros(g.filaPiso)) { if (x > 0) cobro(p, `${c.mes}-01`, c.mes, x, '', '', true); else gasto(p, `${c.mes}-01`, x, g.piso); }
+      for (const r of g.filas) {
+        if (r.clase === 'seccion') { const n = normalizar(r.et); seccion = /ingreso|cobro|entrada/.test(n) ? 'ingresos' : 'gastos'; continue; }
+        if (r.clase === 'total' || r.clase === 'vacia') continue;
+        for (const { c, x } of numeros(r.f)) {
+          const fecha = `${c.mes}-01`;
+          if (r.clase === 'hab') {
+            // «H1 DIANTO» → habitación 1, inquilino Dianto
+            const m = normalizar(r.et).match(HAB_RE);
+            const hab = `Habitación ${m[2].toUpperCase()}`;
+            const quien = texto(r.et).replace(/^\s*(h|hab\.?|habitaci[oó]n|room|cuarto)\s*(\d{1,2}|[a-f])\b[\s.:,–-]*/i, '').trim();
+            if (p.nuevo) p.nuevo.habitaciones.add(hab);
+            if (x > 0) cobro(p, fecha, c.mes, x, quien, `Renta ${hab.toLowerCase()}${quien ? ` (${quien})` : ''}`, true, { habitacion: hab });
+            else gasto(p, fecha, x, r.et);
+            continue;
+          }
+          const n = normalizar(r.et);
+          const esGastoTxt = /seguro|fac(tura)?s?(_|$)|factura|limpiez|derrama|gasto|comision|reparac|arreglo|comunidad|(^|_)ibi(_|$)|suministro|naturgy|endesa|iberdrola|repsol|(^|_)agua|internet|wifi|fibra|movistar|vodafone|orange|basura|tasa|hipoteca|prestamo|compra|mueble|obra|reforma|gestor|asesor|abogad|notari|impuesto|mantenimiento|devolucion/.test(n) && !/inq/.test(n);
+          const esIngTxt = /alquiler|renta|air\w*b|booking|reserva|mensualidad|ingreso|cobro|inq|huesped|(^|_)pa+go_/.test(n);
+          const esIng = x > 0 && (h.modo === 'ingresos' || (h.modo !== 'gastos' && (esGastoTxt ? false : esIngTxt ? true : seccion === 'ingresos')));
+          if (esIng) {
+            if (p.nuevo && /air\w*b|booking|reserva|huesped|turist/.test(n)) p.nuevo.turistico = true;
+            cobro(p, fecha, c.mes, x, '', r.et, true);
+          } else gasto(p, fecha, x, r.et);
+        }
       }
     }
   }
@@ -968,7 +1058,7 @@ function tarjeta(h, i, s, detectados) {
       ${h.tipo === 'ignorar' ? '' : h.tipo === 'meses' ? html`
         <div class="form-grid">
           <label class="field"><span class="field-label">Año</span><input name="y:${i}" type="number" min="1990" max="2100" value="${h.anio}"></label>
-          <label class="field"><span class="field-label">Cada fila es</span><select name="e:${i}">${[['auto', 'Detectar'], ['conceptos', 'Un concepto (luz, comunidad…)'], ['pisos', 'Un piso']].map(([k, t]) => html`<option value="${k}" ${k === h.etiquetas ? 'selected' : ''}>${t}</option>`)}</select></label>
+          <label class="field"><span class="field-label">Cada fila es</span><select name="e:${i}">${[['auto', 'Detectar'], ['secciones', 'Pisos con sus conceptos debajo'], ['conceptos', 'Un concepto (luz, comunidad…)'], ['pisos', 'Un piso']].map(([k, t]) => html`<option value="${k}" ${k === h.etiquetas ? 'selected' : ''}>${t}</option>`)}</select></label>
           <label class="field span2"><span class="field-label">Los importes son</span><select name="m:${i}">${[['auto', 'Detectar (ingresos si dicen alquiler, renta…)'], ['gastos', 'Gastos'], ['ingresos', 'Ingresos']].map(([k, t]) => html`<option value="${k}" ${k === h.modo ? 'selected' : ''}>${t}</option>`)}</select></label>
         </div>` : html`
         <div class="libre-cols">
@@ -1008,7 +1098,7 @@ export function importarLibre(libro, nombreArchivo) {
     const nuevosN = crudos.filter((t) => asignacion.get(normalizar(t)) === 'nuevo');
     const opciones = (t) => {
       const v = asignacion.get(normalizar(t));
-      const ops = [...(s?.pisos || []).map((p) => [p.id, `Es «${p.nombre}» (ya en la app)`]), ['nuevo', 'Piso nuevo'],
+      const ops = [...(s?.pisos || []).map((p) => [p.id, `Es «${p.nombre}» (ya en la app)`]), ['nuevo', 'Piso nuevo'], ['concepto', 'No es un piso (es un concepto)'],
         ...crudos.filter((o) => o !== t && (asignacion.get(normalizar(o)) === 'nuevo' || v === `igual:${normalizar(o)}`)).map((o) => [`igual:${normalizar(o)}`, `Es el mismo que «${o}»`])];
       return ops.map(([k, x]) => html`<option value="${k}" ${k === v ? 'selected' : ''}>${x}</option>`);
     };
