@@ -132,7 +132,15 @@ no se importan). Los datos anteriores se guardan y **Deshacer última importaci�
 También sirve un Excel hecho a mano: basta con hojas que se llamen como las de la app y una fila
 de cabecera con sus títulos (Nombre, Piso, Fecha, Importe…).
 
-## Compartir entre móviles (sincronización)
+## Compartir entre móviles
+
+**Con un archivo, sin configurar nada.** En *Ajustes → Compartir entre móviles*, el móvil con datos
+nuevos pulsa **«Enviar mis datos al otro móvil»** y lo manda por WhatsApp o AirDrop; el otro lo abre
+con **«Recibir datos del otro móvil»** (también en la bienvenida). Los datos se **juntan**, no se
+sustituyen: gana el cambio más reciente de cada registro y los borrados también pasan. Incluye fotos
+y documentos. Se puede repetir en los dos sentidos cuando haga falta.
+
+### Sincronización automática (opcional, con servidor)
 
 **Ajustes → Compartir entre móviles.** Un móvil pulsa **«Activar en este móvil»** y recibe un código
 de 32 caracteres; se lo envía al otro (por WhatsApp), que en su app pulsa **«Unirme con un código»**

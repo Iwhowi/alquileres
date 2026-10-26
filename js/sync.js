@@ -7,7 +7,7 @@
 // como «borrado a tal hora». Así los dos pueden apuntar cosas a la vez sin pisarse.
 import { app } from './state.js';
 import { guardar, alGuardar, sincronizar, migrar, estadoVacio } from './store.js';
-import { leerBlob, ponerBlob, borrarDoc, alFaltarArchivo } from './docs.js';
+import { leerBlob, ponerBlob, borrarDoc, alFaltarArchivo, obtenerBlob, crearZip, leerZip } from './docs.js';
 import { toast } from './ui.js';
 import { num, todayISO } from './calc.js';
 
@@ -99,8 +99,15 @@ function huellasDe(s) {
   return h;
 }
 /** Anota qué registros han cambiado desde la última vez (se llama en cada guardado). */
+// El registro de cambios funciona siempre (también sin servidor): sirve para juntar datos al pasarlos
+// de un móvil a otro con un archivo.
+function asegurarSeguimiento() {
+  cfg ||= {};
+  cfg.marcas ||= {}; cfg.borrados ||= {}; cfg.huellas ||= {}; cfg.ajT ||= 0;
+}
 function marcarCambios(s) {
-  if (!cfg?.codigo || !s) return;
+  if (!s) return;
+  asegurarSeguimiento();
   const ahora = Date.now();
   const nuevas = huellasDe(s);
   let hay = false;
@@ -306,8 +313,9 @@ export function programar(ms = 3000) {
 /* ───────────── Activar, unirse y salir ───────────── */
 
 function empezar(codigo, s, tiempo) {
-  cfg = { servidor: cfg?.servidor || '', codigo, version: 0, ultima: null, marcas: {}, borrados: {}, ajT: tiempo, huellas: huellasDe(s), subidos: [] };
-  for (const col of COLS) cfg.marcas[col] = Object.fromEntries((s[col] || []).map((x) => [x.id, tiempo]));
+  const previo = cfg?.marcas && Object.keys(cfg.marcas).length ? cfg : null; // se conserva el registro de cambios
+  cfg = { servidor: cfg?.servidor || '', codigo, version: 0, ultima: null, marcas: previo?.marcas || {}, borrados: previo?.borrados || {}, ajT: previo?.ajT || tiempo, huellas: huellasDe(s), subidos: [] };
+  if (!previo) for (const col of COLS) cfg.marcas[col] = Object.fromEntries((s[col] || []).map((x) => [x.id, tiempo]));
   guardarCfg();
 }
 
@@ -340,7 +348,7 @@ export async function unirse(codigoTexto, { descartarLocal = false } = {}) {
 }
 
 /** Deja de sincronizar en este móvil (los datos se quedan aquí y en el otro móvil). */
-export function salir() { cfg = cfg?.servidor ? { servidor: cfg.servidor } : null; guardarCfg(); fijar('apagado'); }
+export function salir() { cfg = { servidor: cfg?.servidor || '', marcas: cfg?.marcas || {}, borrados: cfg?.borrados || {}, huellas: cfg?.huellas || {}, ajT: cfg?.ajT || 0 }; guardarCfg(); fijar('apagado'); }
 export function fijarServidor(url) {
   const u = String(url || '').trim().replace(/\/+$/, '');
   if (u && !/^(https:\/\/[^\s/]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)/.test(u)) throw new Error('La dirección debe empezar por https://');
@@ -349,10 +357,74 @@ export function fijarServidor(url) {
 
 /** Arranque: sincroniza al abrir, al volver a la app, al recuperar conexión y cada minuto con la app a la vista. */
 export function iniciarSync() {
-  if (cfg?.codigo && app.s && !cfg.huellas) { cfg.huellas = huellasDe(app.s); guardarCfg(); }
+  // Primera vez con datos ya existentes: todo cuenta como «antiguo» (hora 1)
+  if (app.s && !cfg?.huellas) {
+    asegurarSeguimiento();
+    cfg.huellas = huellasDe(app.s);
+    for (const col of COLS) cfg.marcas[col] = Object.fromEntries((app.s[col] || []).map((x) => [x.id, cfg.marcas[col]?.[x.id] || 1]));
+    cfg.ajT ||= 1;
+    guardarCfg();
+  }
   setTimeout(() => sincronizarAhora(), 1500);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') programar(800); });
   window.addEventListener('online', () => programar(800));
   setInterval(() => { if (document.visibilityState === 'visible') sincronizarAhora(); }, 60000);
   document.addEventListener('close', () => { if (cfg?.codigo) programar(1500); }, true); // al cerrar un formulario
+}
+
+/* ───────────── Pasar los datos con un archivo (sin servidor) ───────────── */
+
+/** Archivo ZIP con los datos de este móvil (y sus documentos) para juntarlos en otro móvil. */
+export async function archivoParaOtroMovil() {
+  if (!app.s) throw new Error('Todavía no hay datos en este móvil');
+  marcarCambios(app.s);
+  const datos = { ...paquete(app.s), formato: 'alquileres-cambios', version: 1, creado: new Date().toISOString() };
+  const entradas = [{ nombre: 'cambios.json', datos: enc.encode(JSON.stringify(datos)) }];
+  for (const d of app.s.docs || []) {
+    const b = await obtenerBlob(d.id).catch(() => null);
+    if (b) entradas.push({ nombre: `docs/${d.id}`, datos: new Uint8Array(await b.arrayBuffer()) });
+    const t = d.miniatura ? await obtenerBlob(`${d.id}:t`).catch(() => null) : null;
+    if (t) entradas.push({ nombre: `docs/${d.id}.t`, datos: new Uint8Array(await t.arrayBuffer()) });
+  }
+  return crearZip(entradas);
+}
+
+/** Lee un archivo de otro móvil: devuelve lo que cambiaría y una función para aplicarlo. */
+export async function leerDeOtroMovil(file) {
+  const entradas = await leerZip(file);
+  const e = entradas.find((x) => x.nombre === 'cambios.json');
+  if (!e) return null;
+  const remoto = JSON.parse(new TextDecoder().decode(e.datos));
+  if (remoto.formato !== 'alquileres-cambios') throw new Error('El archivo no es de la app');
+  if (app.s) marcarCambios(app.s);
+  asegurarSeguimiento();
+  const local = app.s || estadoVacio();
+  const r = juntar(local, cfg.marcas, cfg.borrados, cfg.ajT, remoto);
+  const antes = new Map(COLS.map((c) => [c, new Set((local[c] || []).map((x) => x.id))]));
+  const nuevos = {}; let borrados = 0;
+  for (const c of COLS) {
+    nuevos[c] = r.s[c].filter((x) => !antes.get(c).has(x.id)).length;
+    borrados += [...antes.get(c)].filter((id) => !r.s[c].some((x) => x.id === id)).length;
+  }
+  const aplicar = async () => {
+    const docsAntes = new Set((local.docs || []).map((d) => d.id));
+    sincronizar(r.s, todayISO());
+    cfg.marcas = r.marcas; cfg.borrados = r.borrados; cfg.ajT = r.ajT;
+    cfg.huellas = huellasDe(r.s);
+    guardarCfg();
+    // Documentos que llegan en el archivo
+    for (const x of entradas) {
+      if (!x.nombre.startsWith('docs/')) continue;
+      const clave = x.nombre.slice(5).replace(/\.t$/, ':t');
+      const id = clave.replace(/:t$/, '');
+      if (!r.s.docs.some((d) => d.id === id) || (await leerBlob(clave))) continue;
+      const ficha = r.s.docs.find((d) => d.id === id);
+      await ponerBlob(clave, new Blob([x.datos], { type: clave.endsWith(':t') ? 'image/jpeg' : ficha?.mime || 'application/octet-stream' }));
+    }
+    for (const d of docsAntes) if (!r.s.docs.some((x) => x.id === d)) borrarDoc(d).catch(() => {});
+    app.s = migrar(r.s);
+    guardar(app.s);
+    marcarCambios(app.s);
+  };
+  return { cambios: r.cambiosLocales, nuevos, borrados, remotoCreado: remoto.creado, aplicar };
 }

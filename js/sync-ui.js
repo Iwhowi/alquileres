@@ -1,7 +1,9 @@
 // Pantallas de la sincronización entre móviles (tarjeta de Ajustes y diálogos).
 import { html, raw, ICON, toast, abrirDialogo, cerrarDialogo, confirmar } from './ui.js';
 import { app, commit } from './state.js';
-import { activo, hayServidor, estadoSync, crearCartera, unirse, salir, sincronizarAhora, fijarServidor, alCambiarEstado, normalizarCodigo } from './sync.js';
+import { activo, hayServidor, estadoSync, crearCartera, unirse, salir, sincronizarAhora, fijarServidor, alCambiarEstado, normalizarCodigo, archivoParaOtroMovil, leerDeOtroMovil } from './sync.js';
+import { descargar } from './ui.js';
+import { today } from './state.js';
 
 function haceCuanto(iso) {
   if (!iso) return 'nunca';
@@ -28,13 +30,26 @@ const avanzado = (e) => html`
     </form>
   </details>`;
 
+const porArchivo = (titulo = true) => html`
+  ${titulo ? html`<h3 class="sub-h">Pasar los datos con un archivo</h3>` : ''}
+  <ol class="steps small">
+    <li>En el móvil que tiene los datos nuevos pulsa <b>«Enviar mis datos al otro móvil»</b> y mándalo por WhatsApp.</li>
+    <li>En el otro móvil abre la app y pulsa <b>«Recibir datos del otro móvil»</b> y elige ese archivo.</li>
+  </ol>
+  <p class="muted small">Los datos <b>se juntan</b>: no se pierde lo que ya tenga el otro móvil. Las fotos y documentos también pasan. Repetidlo cuando queráis poneros al día, en un sentido o en el otro.</p>
+  <div class="btn-row">
+    <button class="btn btn-primary" data-action="enviar-otro-movil">${raw(ICON.upload)}<span>Enviar mis datos al otro móvil</span></button>
+    <label class="btn">${raw(ICON.download)}<span>Recibir datos del otro móvil</span><input type="file" accept=".zip,application/zip" data-import="otro-movil" hidden></label>
+  </div>`;
+
 /** Tarjeta de Ajustes. */
 export function tarjetaSync() {
   const e = estadoSync();
   if (!hayServidor()) {
     return html`<section class="card" id="sync">
       <div class="card-head"><h2>Compartir entre móviles</h2></div>
-      <p class="muted">Para que dos o más móviles compartan los mismos datos hace falta conectar el servidor de sincronización (se configura una sola vez).</p>
+      <p class="muted">¿Usáis la app en dos móviles? Pasad los datos de uno a otro con un archivo, sin cuentas ni configuración.</p>
+      ${porArchivo(false)}
       ${avanzado(e)}
     </section>`;
   }
@@ -46,6 +61,7 @@ export function tarjetaSync() {
         <button class="btn btn-primary" data-action="sync-crear">${raw(ICON.upload)}<span>Activar en este móvil</span></button>
         <button class="btn" data-action="sync-unirse">${raw(ICON.download)}<span>Unirme con un código</span></button>
       </div>
+      ${porArchivo()}
       ${avanzado(e)}
     </section>`;
   }
@@ -110,6 +126,7 @@ export function dialogoUnirse() {
 }
 
 export const accionesSync = {
+  'enviar-otro-movil': () => enviarAOtroMovil(),
   'sync-crear': async () => {
     if (!(await confirmar('Compartir entre móviles', 'Se guardará una copia cifrada de esta cartera en el servidor y te daré un código para unir otros móviles. ¿Activar?', { ok: 'Activar', peligro: false }))) return;
     try { const codigo = await crearCartera(); app.render(); dialogoCodigo(codigo, true); } catch (e) { toast(`No se ha podido activar: ${e.message}`, { tipo: 'error', ms: 7000 }); }
@@ -125,4 +142,37 @@ export const accionesSync = {
 
 export function guardarServidor(form) {
   try { fijarServidor(form.elements.servidor.value); toast('Servidor guardado'); app.render(); } catch (e) { toast(e.message, { tipo: 'error' }); }
+}
+
+/** Comparte (o descarga) el archivo para el otro móvil. */
+export async function enviarAOtroMovil() {
+  try {
+    const blob = await archivoParaOtroMovil();
+    const nombre = `alquileres-para-otro-movil-${today()}.zip`;
+    const file = new File([blob], nombre, { type: 'application/zip' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Datos de Alquileres', text: 'Ábrelo en la app: Ajustes → Compartir entre móviles → «Recibir datos del otro móvil».' }); toast('Enviado. En el otro móvil: «Recibir datos del otro móvil».'); return; } catch (e) { if (e?.name === 'AbortError') return; }
+    }
+    descargar(nombre, blob);
+    toast('Archivo descargado. Mándalo al otro móvil y ábrelo con «Recibir datos del otro móvil».', { ms: 7000 });
+  } catch (e) {
+    console.error(e);
+    toast(`No se ha podido preparar el archivo: ${e.message}`, { tipo: 'error', ms: 7000 });
+  }
+}
+
+/** Junta en este móvil los datos de un archivo de otro móvil (tras confirmar). */
+export async function recibirDeOtroMovil(file) {
+  let r;
+  try { r = await leerDeOtroMovil(file); } catch (e) { toast(`No se ha podido leer el archivo: ${e.message}`, { tipo: 'error', ms: 7000 }); return true; }
+  if (!r) return false; // no es de este tipo: que lo trate la restauración de copias
+  if (!r.cambios) { toast('Este móvil ya tenía todo lo de ese archivo.'); return true; }
+  const n = r.nuevos;
+  const pl = (k, uno, varios) => (k === 1 ? `1 ${uno}` : `${k} ${varios}`);
+  const partes = [n.pisos && pl(n.pisos, 'piso', 'pisos'), n.contratos && pl(n.contratos, 'contrato', 'contratos'), n.gastos && pl(n.gastos, 'gasto', 'gastos'), n.cobros && pl(n.cobros, 'cobro', 'cobros'), n.reservas && pl(n.reservas, 'reserva', 'reservas'), n.docs && pl(n.docs, 'documento', 'documentos')].filter(Boolean);
+  const cuando = r.remotoCreado ? new Date(r.remotoCreado).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '';
+  const ok = await confirmar('Recibir datos del otro móvil', `Se juntarán con los de este móvil los datos del archivo${cuando ? ` (enviado el ${cuando})` : ''}: ${pl(r.cambios, 'cambio', 'cambios')}${partes.length ? `, entre ellos nuevos: ${partes.join(', ')}` : ''}${r.borrados ? `. ${r.borrados === 1 ? 'Se quitará 1 cosa que se borró' : `Se quitarán ${r.borrados} cosas que se borraron`} en el otro móvil` : ''}. No se pierde lo que solo esté en este móvil.`, { ok: 'Juntar datos', peligro: false });
+  if (!ok) return true;
+  try { await r.aplicar(); commit(`Datos recibidos: ${r.cambios} cambios`); if (!location.hash || location.hash === '#') location.hash = '#/'; } catch (e) { console.error(e); toast(`No se ha podido aplicar: ${e.message}`, { tipo: 'error', ms: 7000 }); }
+  return true;
 }

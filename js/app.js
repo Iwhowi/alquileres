@@ -15,12 +15,12 @@ import * as F from './forms.js';
 import { descargarExcel, deshacerImportacion } from './excel.js';
 import { importarArchivo } from './importar-libre.js';
 import { iniciarSync, hayServidor } from './sync.js';
-import { accionesSync, guardarServidor } from './sync-ui.js';
+import { accionesSync, guardarServidor, recibirDeOtroMovil } from './sync-ui.js';
 import { guardarArchivo, leerBlob, obtenerBlob, ponerBlob, crearZip, leerZip, extension, urlDe } from './docs.js';
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.8.0';
+app.version = '2.9.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -165,6 +165,11 @@ function renderBienvenida() {
           <strong>Unirme a la cartera de otro móvil</strong>
           <span>Si alguien ya usa la app con vuestros pisos, pega el código que te envíe y tendrás los mismos datos, siempre al día.</span>
         </button>` : ''}
+        <label class="welcome-opt">
+          <strong>Recibir datos del otro móvil</strong>
+          <span>Si alguien ya usa la app con vuestros pisos, que pulse «Enviar mis datos al otro móvil» (en Ajustes) y te lo mande; ábrelo aquí.</span>
+          <input type="file" accept=".zip,application/zip" data-import="otro-movil" hidden>
+        </label>
         <label class="welcome-opt">
           <strong>Empezar desde mi Excel</strong>
           <span>Sube la hoja de cálculo que ya usabas (Excel, Numbers, CSV…), con el formato que tenga: la app reconoce pisos, inquilinos, gastos, cobros y reservas y los crea.</span>
@@ -591,6 +596,10 @@ async function importar(input) {
   input.value = '';
   if (!file) return;
   const tipo = input.dataset.import;
+  if (tipo === 'otro-movil' || (tipo === 'json' && /\.zip$/i.test(file.name))) {
+    if (await recibirDeOtroMovil(file)) return; // archivo «para otro móvil»: se juntan los datos
+    if (tipo === 'otro-movil') { toast('Ese archivo no viene de «Enviar mis datos al otro móvil».', { tipo: 'warn', ms: 6000 }); return; }
+  }
   if (tipo === 'xlsx' || /\.(xlsx|xls|ods|numbers)$/i.test(file.name)) {
     await importarArchivo(file);
     return;
