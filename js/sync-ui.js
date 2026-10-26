@@ -151,7 +151,8 @@ export async function enviarAOtroMovil() {
     const nombre = `alquileres-para-otro-movil-${today()}.zip`;
     const file = new File([blob], nombre, { type: 'application/zip' });
     if (navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: 'Datos de Alquileres', text: 'Ábrelo en la app: Ajustes → Compartir entre móviles → «Recibir datos del otro móvil».' }); toast('Enviado. En el otro móvil: «Recibir datos del otro móvil».'); return; } catch (e) { if (e?.name === 'AbortError') return; }
+      // Solo el archivo: si se añade texto, WhatsApp en iPhone a veces envía el texto y no el archivo
+      try { await navigator.share({ files: [file] }); toast('Enviado. En el otro móvil: «Recibir datos del otro móvil».'); return; } catch (e) { if (e?.name === 'AbortError') return; }
     }
     descargar(nombre, blob);
     toast('Archivo descargado. Mándalo al otro móvil y ábrelo con «Recibir datos del otro móvil».', { ms: 7000 });

@@ -1,5 +1,5 @@
 // Service worker: la app funciona sin conexión (caché de la carcasa, red primero para actualizarse).
-const CACHE = 'alquileres-v2.9.0';
+const CACHE = 'alquileres-v2.9.1';
 const ARCHIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/calc.js', 'js/store.js', 'js/state.js', 'js/ui.js', 'js/forms.js', 'js/csv.js', 'js/demo.js',
