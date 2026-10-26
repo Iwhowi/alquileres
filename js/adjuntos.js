@@ -2,7 +2,7 @@
 import { html, raw, ICON, toast, esc, fmtFecha, alCerrar } from './ui.js';
 import { app } from './state.js';
 import { uid } from './store.js';
-import { guardarArchivo, borrarDoc, urlDe, tamano, leerBlob, extension } from './docs.js';
+import { guardarArchivo, borrarDoc, urlDe, tamano, leerBlob, obtenerBlob, extension } from './docs.js';
 
 export const docsDe = (tipo, refId) => (app.s.docs || []).filter((d) => d.tipo === tipo && d.refId === refId);
 export const tieneDocs = (tipo, refId) => (app.s.docs || []).some((d) => d.tipo === tipo && d.refId === refId);
@@ -131,7 +131,7 @@ export async function verDoc(d) {
     const b = e.target.closest('[data-visor]');
     if (e.target === v || b?.dataset.visor === 'cerrar') v.close();
     if (b?.dataset.visor === 'compartir') {
-      const blob = await leerBlob(d.id);
+      const blob = await obtenerBlob(d.id);
       const file = new File([blob], d.nombre, { type: d.mime });
       if (navigator.canShare?.({ files: [file] })) navigator.share({ files: [file], title: d.nombre }).catch(() => {});
       else toast('Este navegador no permite compartir archivos: usa «Descargar».', { tipo: 'warn' });

@@ -14,11 +14,13 @@ import { vistaAjustes } from './views/ajustes.js';
 import * as F from './forms.js';
 import { descargarExcel, deshacerImportacion } from './excel.js';
 import { importarArchivo } from './importar-libre.js';
-import { guardarArchivo, leerBlob, ponerBlob, crearZip, leerZip, extension, urlDe } from './docs.js';
+import { iniciarSync, hayServidor } from './sync.js';
+import { accionesSync, guardarServidor } from './sync-ui.js';
+import { guardarArchivo, leerBlob, obtenerBlob, ponerBlob, crearZip, leerZip, extension, urlDe } from './docs.js';
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.7.0';
+app.version = '2.8.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -159,6 +161,10 @@ function renderBienvenida() {
           <strong>Ver con datos de ejemplo</strong>
           <span>Explora la app con inquilinos, reservas e impagos ficticios. Podrás borrarlos después.</span>
         </button>
+        ${hayServidor() ? html`<button class="welcome-opt" data-action="sync-unirse">
+          <strong>Unirme a la cartera de otro móvil</strong>
+          <span>Si alguien ya usa la app con vuestros pisos, pega el código que te envíe y tendrás los mismos datos, siempre al día.</span>
+        </button>` : ''}
         <label class="welcome-opt">
           <strong>Empezar desde mi Excel</strong>
           <span>Sube la hoja de cálculo que ya usabas (Excel, Numbers, CSV…), con el formato que tenga: la app reconoce pisos, inquilinos, gastos, cobros y reservas y los crea.</span>
@@ -327,10 +333,13 @@ document.addEventListener('input', (e) => {
   }
 });
 
+Object.assign(acciones, accionesSync);
+
 document.addEventListener('submit', (e) => {
   const form = e.target.closest('[data-form]');
   if (!form) return;
   e.preventDefault();
+  if (form.dataset.form === 'sync-servidor') { guardarServidor(form); return; }
   const d = Object.fromEntries(new FormData(form).entries());
   if (form.dataset.form === 'gasto-rapido') {
     d.extraordinario = form.elements.extraordinario.checked;
@@ -485,7 +494,7 @@ async function zipGestor(compartir) {
   let faltan = 0;
   toast('Preparando los justificantes…', { ms: 2500 });
   const anadir = async (d, carpeta, base, info) => {
-    const b = await leerBlob(d.id);
+    const b = await obtenerBlob(d.id);
     if (!b) { faltan++; return; }
     let nombre = `${carpeta}/${limpio(base)}`;
     for (let n = 2; usados.has(nombre); n++) nombre = `${carpeta}/${limpio(base)} (${n})`;
@@ -542,9 +551,9 @@ async function exportarZipCompleto() {
   toast('Preparando la copia con documentos…', { ms: 2500 });
   const entradas = [{ nombre: 'alquileres.json', datos: JSON.stringify({ ...s, ajustes: { ...s.ajustes, ultimoBackup: today() } }) }];
   for (const d of s.docs) {
-    const b = await leerBlob(d.id);
+    const b = await obtenerBlob(d.id);
     if (b) entradas.push({ nombre: `docs/${d.id}`, datos: b });
-    const t = d.miniatura ? await leerBlob(`${d.id}:t`) : null;
+    const t = d.miniatura ? await obtenerBlob(`${d.id}:t`) : null;
     if (t) entradas.push({ nombre: `docs/${d.id}.t`, datos: t });
   }
   const zip = await crearZip(entradas);
@@ -698,6 +707,7 @@ function iniciar() {
     if (document.visibilityState === 'visible' && app.s && todayISO() !== ultimoDia && !document.querySelector('dialog[open]')) render();
   });
   render();
+  iniciarSync();
   navigator.storage?.persist?.().catch(() => {});
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {

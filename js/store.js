@@ -106,8 +106,13 @@ export function cargar() {
   }
 }
 
+let trasGuardar = null;
+/** Aviso tras cada guardado (lo usa la sincronización para saber qué ha cambiado). */
+export function alGuardar(fn) { trasGuardar = fn; }
+
 export function guardar(state) {
   localStorage.setItem(KEY, JSON.stringify(state));
+  try { trasGuardar?.(state); } catch (e) { console.error(e); }
 }
 
 export function borrarTodo() {

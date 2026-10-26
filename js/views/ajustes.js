@@ -1,4 +1,5 @@
 import { hayDeshacer } from '../excel.js';
+import { tarjetaSync } from '../sync-ui.js';
 import { html, raw, fmtFecha, ICON } from '../ui.js';
 import { app, pisosDe } from '../state.js';
 
@@ -7,6 +8,8 @@ export function vistaAjustes() {
   const a = s.ajustes;
   return html`
     <header class="page-head"><div><h1>Ajustes</h1><p class="muted">Titulares, avisos, mensajes y copias de seguridad</p></div></header>
+
+    ${tarjetaSync()}
 
     <section class="card">
       <div class="card-head"><h2>Titulares</h2><button class="btn btn-sm" data-action="nuevo-titular">${raw(ICON.plus)}<span>Titular</span></button></div>

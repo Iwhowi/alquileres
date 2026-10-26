@@ -602,3 +602,12 @@ details.libre-hoja:not([open]) > summary { margin-bottom: 0; }
 .libre-res.import-err { color: var(--warn); }
 @media (max-width: 640px) { .libre-res { flex-basis: 100%; } .libre-tabla { max-height: 300px; } }
 @media (max-width: 640px) { .libre-tabla select { max-width: 150px; } }
+
+/* Compartir entre móviles */
+.sync-codigo { font: 600 19px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; padding: 14px 16px; border-radius: 12px; background: var(--surface-2); text-align: center; word-break: break-all; user-select: all; -webkit-user-select: all; }
+.sync-entrada { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+.sync-opciones { border: 0; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+.sync-avanzado { margin-top: 14px; }
+.sync-avanzado summary { cursor: pointer; }
+.sync-servidor { display: flex; gap: 8px; margin-top: 8px; }
+.sync-servidor input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 13px; }

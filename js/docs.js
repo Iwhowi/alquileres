@@ -81,10 +81,16 @@ export async function guardarArchivo(file, id) {
 /* ───────────── URLs para ver los archivos ───────────── */
 
 const urls = new Map();
+let buscarFuera = null;
+/** Quién trae un archivo que no está en este móvil (la sincronización). */
+export function alFaltarArchivo(fn) { buscarFuera = fn; }
+/** El archivo de este móvil o, si llegó la ficha de otro móvil, descargado de la sincronización. */
+export async function obtenerBlob(clave) { return (await leerBlob(clave)) || (buscarFuera ? buscarFuera(clave) : null); }
 export async function urlDe(id, miniatura = false) {
   const clave = miniatura ? `${id}:t` : id;
   if (urls.has(clave)) return urls.get(clave);
-  const b = await leerBlob(clave);
+  let b = await leerBlob(clave);
+  if (!b && buscarFuera) b = await buscarFuera(clave); // llegó de otro móvil: se descarga ahora
   if (!b) return null;
   const u = URL.createObjectURL(b);
   urls.set(clave, u);

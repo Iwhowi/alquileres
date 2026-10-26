@@ -132,10 +132,24 @@ no se importan). Los datos anteriores se guardan y **Deshacer última importaci�
 También sirve un Excel hecho a mano: basta con hojas que se llamen como las de la app y una fila
 de cabecera con sus títulos (Nombre, Piso, Fecha, Importe…).
 
-## Sincronizar móvil y Mac
+## Compartir entre móviles (sincronización)
 
-No hay nube: exporta la copia JSON en un dispositivo (por ejemplo a iCloud Drive) y restáurala en
-el otro. El panel avisa si la última copia tiene más de un mes.
+**Ajustes → Compartir entre móviles.** Un móvil pulsa **«Activar en este móvil»** y recibe un código
+de 32 caracteres; se lo envía al otro (por WhatsApp), que en su app pulsa **«Unirme con un código»**
+(o **«Unirme a la cartera de otro móvil»** en la bienvenida) y lo pega. Desde entonces comparten la
+cartera: se sincroniza sola al abrir la app, al volver a ella y unos segundos después de cada cambio,
+fotos y documentos incluidos.
+
+- Sin cuentas ni contraseñas: el código es la llave. Todo se cifra en el móvil (AES-GCM) antes de
+  enviarse; el servidor solo guarda datos ilegibles.
+- Si los dos cambian cosas a la vez se juntan registro a registro (gana el cambio más reciente de cada
+  piso, gasto, cobro…); los borrados también viajan. Los recibos que generen a la vez los dos móviles
+  para el mismo mes se quedan en uno.
+- Sin conexión se sigue usando con normalidad y se sincroniza al volver.
+- El servidor es un Cloudflare Worker gratuito: ver [`sync-worker/LEEME.md`](sync-worker/LEEME.md).
+
+Sin sincronización también se puede pasar todo a otro dispositivo con la copia JSON o ZIP, o con el
+Excel (que añade en vez de sustituir).
 
 ## Desarrollo
 
