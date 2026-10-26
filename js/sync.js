@@ -12,7 +12,7 @@ import { toast } from './ui.js';
 import { num, todayISO } from './calc.js';
 
 /** Dirección del servidor (Cloudflare Worker). Se puede cambiar en Ajustes → Sincronizar → Avanzado. */
-export const SERVIDOR_DEFECTO = '';
+export const SERVIDOR_DEFECTO = 'https://alquileres-sync.verificacion2008nacho.workers.dev';
 
 const CLAVE = 'alquileres.sync';
 const COLS = ['titulares', 'pisos', 'unidades', 'contratos', 'cobros', 'reservas', 'gastos', 'recurrentes', 'hipotecas', 'docs'];
@@ -195,13 +195,22 @@ export function juntar(local, marcasL, borradosL, ajTL, remoto) {
 /* ───────────── Red ───────────── */
 
 async function pedir(ruta, opciones = {}) {
-  const r = await fetch(`${servidor()}${ruta}`, { ...opciones, cache: 'no-store' });
-  return r;
+  try {
+    return await fetch(`${servidor()}${ruta}`, { ...opciones, cache: 'no-store' });
+  } catch {
+    throw new Error('No se puede conectar con el servidor (¿sin internet?)');
+  }
+}
+/** Mensaje claro con lo que diga el servidor (p. ej. «Falta enlazar el espacio KV…»). */
+async function fallo(r, defecto) {
+  let msg = '';
+  try { msg = (await r.clone().json()).error || ''; } catch {}
+  return new Error(msg ? `${defecto}: ${msg}` : `${defecto} (código ${r.status})`);
 }
 async function bajar(id, key) {
   const r = await pedir(`/v1/${id}`);
   if (r.status === 404) return { version: 0, datos: null };
-  if (!r.ok) throw new Error(`El servidor respondió ${r.status}`);
+  if (!r.ok) throw await fallo(r, 'El servidor ha dado un error');
   const j = await r.json();
   return { version: j.version, datos: j.datos ? JSON.parse(new TextDecoder().decode(await descifrar(key, deB64(j.datos)))) : null };
 }
@@ -209,7 +218,7 @@ async function subir(id, key, base, datos) {
   const cuerpo = aB64(await cifrar(key, enc.encode(JSON.stringify(datos))));
   const r = await pedir(`/v1/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base, datos: cuerpo }) });
   if (r.status === 409) return { conflicto: true };
-  if (!r.ok) throw new Error(r.status === 413 ? 'La cartera es demasiado grande para sincronizar' : `El servidor respondió ${r.status}`);
+  if (!r.ok) throw r.status === 413 ? new Error('La cartera es demasiado grande para sincronizar') : await fallo(r, 'El servidor ha dado un error');
   return { version: (await r.json()).version };
 }
 
@@ -226,7 +235,7 @@ async function subirDocs(s, id, key) {
       if (!b) continue;
       const cuerpo = await cifrar(key, new Uint8Array(await b.arrayBuffer()));
       const r = await pedir(`/v1/${id}/doc/${encodeURIComponent(clave)}`, { method: 'PUT', body: cuerpo });
-      if (!r.ok) throw new Error(`No se ha podido subir un documento (${r.status})`);
+      if (!r.ok) throw await fallo(r, 'No se ha podido subir un documento');
     }
     hechos.add(d.id); cfg.subidos = [...hechos]; guardarCfg();
   }

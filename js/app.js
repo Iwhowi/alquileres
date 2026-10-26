@@ -20,7 +20,7 @@ import { guardarArchivo, leerBlob, obtenerBlob, ponerBlob, crearZip, leerZip, ex
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.9.1';
+app.version = '2.10.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],

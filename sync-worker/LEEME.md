@@ -14,7 +14,7 @@ con el código de la cartera: el servidor no puede leer nada. Plan gratuito de C
    → *KV namespace* → Variable name: `CARTERAS` → KV namespace: `alquileres` → **Add binding** / **Deploy**.
 6. Copia la dirección del Worker (tipo `https://alquileres-sync.TU-NOMBRE.workers.dev`) y ábrela:
    debe decir `{"ok":true,"servicio":"alquileres-sync"}`.
-7. Pon esa dirección en `SERVIDOR_DEFECTO` de `js/sync.js` (o en la app: *Ajustes → Compartir entre
+7. Pon esa dirección en `SERVIDOR_DEFECTO` (ya puesta: `https://alquileres-sync.verificacion2008nacho.workers.dev`) de `js/sync.js` (o en la app: *Ajustes → Compartir entre
    móviles → Avanzado*).
 
 ## Límites del plan gratuito
