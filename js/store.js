@@ -80,6 +80,9 @@ export function nuevoPiso(over = {}) {
     pctFiscal: null, // null = automático según contratos o noches reservadas
     excesoPrevio: 0,
     excesoPrevioAnio: '',
+    // Características y valor de mercado (informativos)
+    superficie: '', superficieComun: '', dormitorios: '', banos: '', anioConstruccion: '', caracteristicas: '',
+    valorMercado: 0, fechaValoracion: '', fuenteValoracion: '',
     notas: '',
     ...over,
   };

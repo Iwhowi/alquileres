@@ -17,7 +17,7 @@ export function vistaPisos() {
   const ym = ymOf(today());
   return html`
     <header class="page-head">
-      <div><h1>Pisos</h1><p class="muted">Inquilinos, contratos, hipotecas y datos de cada inmueble</p></div>
+      <div><h1>Pisos</h1><p class="muted">Inquilinos, contratos, hipotecas y datos de cada inmueble${s.pisos.some((p) => num(p.valorMercado)) ? ` · Valor estimado de la cartera: ${fmtEUR0(s.pisos.reduce((a, p) => a + num(p.valorMercado), 0))}` : ''}</p></div>
       <button class="btn btn-primary" data-action="nuevo-piso">${raw(ICON.plus)}<span>Añadir piso</span></button>
     </header>
     ${s.titulares.map((t) => {
@@ -53,7 +53,7 @@ function tarjetaPiso(p, ym) {
         ${alertas ? html`<span class="chip chip-warn">${alertas} ${alertas === 1 ? 'contrato vence' : 'contratos vencen'}</span>` : ''}
       </div>
       <h3>${p.nombre}</h3>
-      <p class="muted small">${p.direccion || ' '}</p>
+      <p class="muted small">${p.direccion || ' '}${num(p.superficie) ? ` · ${String(num(p.superficie)).replace('.', ',')} m²` : ''}</p>
       <p class="small">${ocup}</p>
       <dl class="mini-stats">
         <div><dt>Ingresos mes</dt><dd>${fmtEUR0(r.ingresos)}</dd></div>
@@ -315,6 +315,33 @@ function bloqueFicha(p, t) {
         <div><dt>Días arrendado ${app.ui.mes.slice(0, 4)} (prorrateo fiscal)</dt><dd>${Math.round(factorArrendado(p, ctxPiso(p.id), Number(app.ui.mes.slice(0, 4)), { regimen: reg, hasta: app.ui.mes.slice(0, 4) === today().slice(0, 4) ? today() : `${app.ui.mes.slice(0, 4)}-12-31` }) * 100)} %${p.pctFiscal == null || p.pctFiscal === '' ? html` <span class="muted small">automático</span>` : ''}</dd></div>
       </dl>
       ${p.notas ? html`<p class="notes">${p.notas}</p>` : ''}
+    </section>
+    ${bloqueCaracteristicas(p)}`;
+}
+
+/** Superficie, distribución y valor de mercado (si se han indicado). */
+function bloqueCaracteristicas(p) {
+  const m2 = num(p.superficie);
+  const vm = num(p.valorMercado);
+  const inv = num(p.precioAdquisicion);
+  const hay = (x) => x !== '' && x != null;
+  const partes = [
+    m2 ? `${String(m2).replace('.', ',')} m²${num(p.superficieComun) ? ` (+${String(num(p.superficieComun)).replace('.', ',')} m² comunes)` : ''}` : '',
+    hay(p.dormitorios) ? `${p.dormitorios} ${Number(p.dormitorios) === 1 ? 'dormitorio' : 'dormitorios'}` : '',
+    hay(p.banos) ? `${p.banos} ${Number(p.banos) === 1 ? 'baño' : 'baños'}` : '',
+    p.anioConstruccion ? `año ${p.anioConstruccion}` : '',
+  ].filter(Boolean);
+  if (!partes.length && !vm && !p.caracteristicas) return '';
+  return html`
+    <section class="card">
+      <div class="card-head"><h2>Características y valor</h2><button class="btn btn-sm btn-ghost" data-action="editar-piso" data-id="${p.id}">Editar</button></div>
+      <dl class="facts">
+        ${partes.length ? html`<div><dt>Vivienda</dt><dd>${partes.join(' · ')}</dd></div>` : ''}
+        ${p.caracteristicas ? html`<div><dt>Extras</dt><dd>${p.caracteristicas}</dd></div>` : ''}
+        ${vm ? html`<div><dt>Valor de mercado estimado</dt><dd>${fmtEUR(vm)}${p.fechaValoracion ? html` <span class="muted small">(${p.fuenteValoracion ? `${p.fuenteValoracion}, ` : ''}${fmtFecha(p.fechaValoracion)})</span>` : ''}</dd></div>` : ''}
+        ${vm && m2 ? html`<div><dt>Valor por m²</dt><dd>${fmtEUR(vm / m2)}</dd></div>` : ''}
+        ${vm && inv ? html`<div><dt>Revalorización desde la compra</dt><dd class="${vm < inv ? 't-neg' : ''}">${fmtEUR(vm - inv)} (${((vm / inv - 1) * 100).toFixed(1).replace('.', ',')} %)</dd></div>` : ''}
+      </dl>
     </section>`;
 }
 

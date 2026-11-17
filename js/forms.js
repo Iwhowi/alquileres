@@ -319,6 +319,15 @@ export function formPiso(id) {
         ${campo('Días arrendado (%)', dec('pctFiscal', v.pctFiscal ?? '', { ph: 'Automático' }), { ayuda: 'Vacío = se calcula cada año con los contratos o las noches reservadas. Prorratea gastos generales y amortización (solo IRPF). Por habitaciones cuenta como arrendado si hay al menos una ocupada.' })}
         ${campo('Exceso pendiente de años anteriores', money('excesoPrevio', v.excesoPrevio), { ayuda: 'Intereses + reparación no deducidos antes de usar la app (casilla de la última renta).' })}
         ${campo('Año de ese exceso', inp('excesoPrevioAnio', v.excesoPrevioAnio, { type: 'number', min: 2015, max: 2100, ph: 'Ej.: 2024' }))}
+        <h3 class="sub-h span2">Características</h3>
+        ${campo('Superficie (m²)', dec('superficie', v.superficie ?? ''))}
+        ${campo('Zonas comunes (m²)', dec('superficieComun', v.superficieComun ?? ''))}
+        ${campo('Dormitorios', inp('dormitorios', v.dormitorios ?? '', { type: 'number', min: 0, max: 30 }))}
+        ${campo('Baños', inp('banos', v.banos ?? '', { type: 'number', min: 0, max: 20 }))}
+        ${campo('Año de construcción o reforma', inp('anioConstruccion', v.anioConstruccion ?? '', { type: 'number', min: 1800, max: 2100 }))}
+        ${campo('Extras', inp('caracteristicas', v.caracteristicas ?? '', { ph: 'Ascensor, terraza, garaje…' }))}
+        ${campo('Valor de mercado estimado', money('valorMercado', v.valorMercado ?? 0), { ayuda: 'Lo que valdría hoy en venta (tasación, Idealista…). Solo informativo.' })}
+        ${campo('Fecha de la valoración', inp('fechaValoracion', v.fechaValoracion ?? '', { type: 'date' }), { ayuda: v.fuenteValoracion ? `Fuente: ${v.fuenteValoracion}` : '' })}
         ${campo('Notas', raw(`<textarea name="notas" rows="2">${String(html`${v.notas || ''}`)}</textarea>`), { clase: 'span2' })}
         ${zonaDocs('Documentos del piso', 'Escritura, nota simple, recibo del IBI, póliza del seguro, certificado energético…')}
       </div>`,
@@ -330,6 +339,10 @@ export function formPiso(id) {
         fechaAdquisicion: d.fechaAdquisicion, precioAdquisicion: r2(num(d.precioAdquisicion)), valorConstruccion: r2(num(d.valorConstruccion)),
         reduccion: Math.min(90, Math.max(0, num(d.reduccion))), pctFiscal: d.pctFiscal === '' ? null : Math.min(100, Math.max(0, num(d.pctFiscal))),
         excesoPrevio: r2(num(d.excesoPrevio)), excesoPrevioAnio: d.excesoPrevioAnio, notas: d.notas,
+        superficie: d.superficie === '' ? '' : num(d.superficie), superficieComun: d.superficieComun === '' ? '' : num(d.superficieComun),
+        dormitorios: d.dormitorios === '' ? '' : num(d.dormitorios) | 0, banos: d.banos === '' ? '' : num(d.banos) | 0,
+        anioConstruccion: d.anioConstruccion, caracteristicas: d.caracteristicas, valorMercado: r2(num(d.valorMercado)),
+        fechaValoracion: d.fechaValoracion,
       });
       if (!p) {
         app.s.pisos.push(obj);
