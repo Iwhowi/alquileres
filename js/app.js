@@ -20,7 +20,7 @@ import { guardarArchivo, leerBlob, obtenerBlob, ponerBlob, crearZip, leerZip, ex
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 
-app.version = '2.12.0';
+app.version = '2.12.1';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -719,15 +719,20 @@ function iniciar() {
   iniciarSync();
   navigator.storage?.persist?.().catch(() => {});
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    // Actualización automática: al haber versión nueva se recarga sola (si no hay un formulario abierto).
+    const habiaVersion = !!navigator.serviceWorker.controller;
+    let recargando = false;
+    const recargar = () => {
+      if (recargando) return;
+      if (document.querySelector('dialog[open]')) { toast('Hay una versión nueva de la app', { accion: { texto: 'Actualizar', fn: () => location.reload() }, ms: 15000 }); return; }
+      recargando = true;
+      location.reload();
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (habiaVersion) recargar(); });
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
-      reg.addEventListener('updatefound', () => {
-        const nw = reg.installing;
-        nw?.addEventListener('statechange', () => {
-          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-            toast('Hay una versión nueva disponible', { accion: { texto: 'Actualizar', fn: () => location.reload() }, ms: 15000 });
-          }
-        });
-      });
+      reg.update().catch(() => {});
+      // Al volver a la app se busca versión nueva (en móviles la app puede quedarse abierta días)
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
     }).catch(() => {});
   }
 }
