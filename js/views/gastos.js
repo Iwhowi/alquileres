@@ -11,7 +11,7 @@ export function opcionesCategoria() {
   return [
     { grupo: 'Deducibles en el año', items: CATEGORIAS.filter((c) => c.trato === 'gasto').map((c) => ({ v: c.id, t: c.nombre })) },
     { grupo: 'Se amortizan', items: CATEGORIAS.filter((c) => c.trato.startsWith('amort')).map((c) => ({ v: c.id, t: `${c.nombre} (${c.trato === 'amort_mue' ? '10 %/año' : '3 %/año'})` })) },
-    { grupo: 'Otros', items: [{ v: 'no_deducible', t: 'No deducible' }] },
+    { grupo: 'Otros', items: [{ v: 'cuota_hipoteca', t: 'Cuota de hipoteca o préstamo' }, { v: 'no_deducible', t: 'No deducible' }] },
   ];
 }
 

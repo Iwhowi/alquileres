@@ -196,7 +196,8 @@ function mismaPersona(a, b) {
 
 /** Categoría de gasto adivinada por el texto del concepto, la categoría o el proveedor. */
 const PISTAS = [
-  ['no_deducible', /hipoteca|prestamo|amortizacion_de_capital|multa|sancion|personal/],
+  ['cuota_hipoteca', /hipoteca|prestamo|amortizacion_de_capital/],
+  ['no_deducible', /multa|sancion|personal/],
   ['comunidad', /community|hoa|comunidad|cdad|derrama|administrador_de_fincas|cuota_comunit/],
   ['ibi', /property_tax|\bibi\b|^ibi|_ibi|contribucion|bienes_inmuebles/],
   ['tasas', /basura|tasa|residuo|vado|alcantarillado|impuesto_municipal/],
@@ -794,7 +795,7 @@ function convertir(hojas, s, asignacion = new Map(), conocidosExt = null) {
     if (typeof p === 'function') p = p(); // el piso se resuelve solo si la fila vale (no crea pisos por filas de notas)
     if (existeGasto(p, fecha, importe, concepto)) { duplicados++; return; }
     const cat = adivinarCategoria(extra.categoria, concepto, extra.proveedor);
-    if (cat === 'no_deducible' && /hipoteca|prestamo/.test(normalizar(`${concepto} ${extra.categoria || ''}`))) out._hipotecaComoGasto = true;
+    if (cat === 'cuota_hipoteca') out._hipotecaComoGasto = true;
     out.gastos.push({ Fecha: fecha, Piso: p.nombre, Categoría: CAT[cat].nombre, Concepto: texto(concepto) || CAT[cat].nombre, Proveedor: texto(extra.proveedor), Importe: importe, Deducible: extra.deducible == null ? '' : extra.deducible ? 'sí' : 'no' });
   };
   const cobro = (p, fecha, periodo, importe, quien, concepto, cobrado, extra = {}) => {
@@ -1023,7 +1024,7 @@ function convertir(hojas, s, asignacion = new Map(), conocidosExt = null) {
   if (duplicados) notas.push(duplicados === 1 ? "1 fila ya estaba en la app y no se duplica." : `${duplicados} filas ya estaban en la app y no se duplican.`);
   if (abonos) avisos.push(`${abonos} importes negativos entre gastos o cobros (devoluciones o abonos) no se han importado; revísalos si hace falta.`);
   if (omitidas) notas.push(omitidas === 1 ? '1 fila sin importe, fecha o datos suficientes se ha saltado.' : `${omitidas} filas sin importe, fecha o datos suficientes se han saltado.`);
-  if (out._hipotecaComoGasto) avisos.push('Las cuotas de hipoteca o préstamo se importan como gasto no deducible (la cuota incluye capital). Da de alta la hipoteca en la ficha del piso para que la app calcule los intereses deducibles.');
+  if (out._hipotecaComoGasto) avisos.push('Las cuotas de hipoteca o préstamo se importan como «Cuota de hipoteca» (salen en la columna Hipoteca del panel, no deducibles tal cual). Para deducir los intereses, da de alta la hipoteca en la ficha del piso y borra esas cuotas.');
   const pisosNuevos = nuevos.map((n) => n.nombre);
   return { out, notas, avisos, pisosNuevos, duplicados };
 }

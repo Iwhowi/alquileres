@@ -138,6 +138,9 @@ export const CATEGORIAS = [
   { id: 'mobiliario', nombre: 'Mobiliario y electrodomésticos', grupo: 'amort_mue', trato: 'amort_mue' },
   { id: 'mejora', nombre: 'Mejora o ampliación', grupo: 'amort_inm', trato: 'amort_inm' },
   { id: 'no_deducible', nombre: 'No deducible', grupo: null, trato: 'no' },
+  // Cuota pagada al banco apuntada como gasto (sin dar de alta la hipoteca): cuenta como «Hipoteca» en el panel.
+  // No es deducible tal cual: para deducir los intereses hay que dar de alta la hipoteca en el piso.
+  { id: 'cuota_hipoteca', nombre: 'Cuota de hipoteca o préstamo', grupo: null, trato: 'no', hipoteca: true },
 ];
 export const CAT = Object.fromEntries(CATEGORIAS.map((c) => [c.id, c]));
 
@@ -315,12 +318,14 @@ export function resultadoPiso(ctx, desde, hasta, { incluirExtra = true } = {}) {
   }
   let gOrd = 0;
   let gExtra = 0;
+  let cuotasApuntadas = 0;
   for (const g of ctx.gastos) {
     if (g.fecha < desde || g.fecha > hasta) continue;
+    if (CAT[g.categoria]?.hipoteca) { cuotasApuntadas += num(g.importe); continue; } // va a «Hipoteca», no a gastos
     if (g.extraordinario) gExtra += num(g.importe);
     else gOrd += num(g.importe);
   }
-  let cuota = 0;
+  let cuota = cuotasApuntadas;
   let intereses = 0;
   let amortCapital = 0;
   for (let ym = ymDesde; ym <= ymHasta; ym = addMonths(ym, 1)) {

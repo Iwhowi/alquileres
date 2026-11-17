@@ -58,7 +58,7 @@ export function vistaPanel() {
     <section class="kpis panel-kpis" aria-label="Resumen del mes">
       ${kpi('Ingresos', tot.ingresos, html`${fmtEUR0(tot.cobrado)} cobrado${tot.pendiente > 0.5 ? html` · <span class="t-warn">${fmtEUR0(tot.pendiente)} por cobrar</span>` : ''}`)}
       ${kpi('Gastos', tot.gastos, tot.gastosExtra > 0 ? `${fmtEUR0(tot.gastosExtra)} extraordinarios${app.ui.incluirExtra ? '' : ' (excluidos)'}` : 'Sin extraordinarios')}
-      ${kpi('Hipotecas', tot.cuota, tot.cuota > 0 ? `${fmtEUR0(tot.intereses)} intereses · ${fmtEUR0(tot.amortCapital)} capital` : 'Sin hipotecas')}
+      ${kpi('Hipotecas', tot.cuota, tot.cuota > 0 ? (tot.intereses + tot.amortCapital > 0.005 ? `${fmtEUR0(tot.intereses)} intereses · ${fmtEUR0(tot.amortCapital)} capital${tot.cuota - tot.intereses - tot.amortCapital > 0.5 ? ' · resto, cuotas apuntadas como gasto' : ''}` : 'Cuotas apuntadas como gasto (sin desglose de intereses)') : 'Sin hipotecas')}
       ${kpi('Cash‑flow del mes', tot.cashflow, `Lo cobrado − gastos − hipoteca · rent. neta ${fmtPct(rentTotal)} (12 m)`, true)}
     </section>
 
