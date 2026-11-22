@@ -126,7 +126,7 @@ export async function verDoc(d) {
       <a class="btn btn-sm" href="${url}" download="${d.nombre}">Descargar</a>
       <button type="button" class="icon-btn" data-visor="cerrar" aria-label="Cerrar">${raw(ICON.x)}</button>
     </div>
-    <div class="visor-cuerpo">${pdf ? html`<iframe src="${url}" title="${d.nombre}"></iframe>` : html`<img src="${url}" alt="${d.nombre}">`}</div>`);
+    <div class="visor-cuerpo${pdf ? ' visor-pdf' : ''}">${pdf ? html`<div class="visor-cargando"><span class="spinner"></span> Abriendo el PDF…</div>` : html`<img src="${url}" alt="${d.nombre}">`}</div>`);
   v.onclick = async (e) => {
     const b = e.target.closest('[data-visor]');
     if (e.target === v || b?.dataset.visor === 'cerrar') v.close();
@@ -138,6 +138,41 @@ export async function verDoc(d) {
     }
   };
   v.showModal();
+  if (pdf) pintarPdf(v.querySelector('.visor-cuerpo'), d, url);
+}
+
+/* Los PDF se dibujan página a página con PDF.js: el navegador del móvil (Chrome en Android)
+   no sabe mostrar un PDF dentro de la app y dejaba el visor en blanco. */
+let pdfjs = null;
+async function pintarPdf(cuerpo, d, url) {
+  try {
+    pdfjs ||= import('./vendor/pdfjs/pdf.min.mjs').then((m) => {
+      m.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
+      return m;
+    });
+    const lib = await pdfjs;
+    const datos = new Uint8Array(await (await obtenerBlob(d.id)).arrayBuffer());
+    const doc = await lib.getDocument({ data: datos }).promise;
+    cuerpo.innerHTML = '';
+    const ancho = Math.max(280, cuerpo.clientWidth - 16);
+    const ppp = Math.min(2, window.devicePixelRatio || 1);
+    for (let n = 1; n <= doc.numPages; n++) {
+      if (!cuerpo.isConnected) break; // se cerró el visor
+      const pag = await doc.getPage(n);
+      const vista = pag.getViewport({ scale: 1 });
+      const escala = Math.min(ancho / vista.width, 2.5);
+      const v = pag.getViewport({ scale: escala * ppp });
+      const c = document.createElement('canvas');
+      c.width = Math.round(v.width); c.height = Math.round(v.height);
+      c.style.width = `${Math.round(v.width / ppp)}px`;
+      c.setAttribute('aria-label', `Página ${n} de ${doc.numPages}`);
+      cuerpo.append(c);
+      await pag.render({ canvasContext: c.getContext('2d'), viewport: v }).promise;
+    }
+  } catch (e) {
+    // Si PDF.js falla, se intenta con el visor del navegador
+    cuerpo.innerHTML = String(html`<iframe src="${url}" title="${d.nombre}"></iframe>`);
+  }
 }
 
 export { esc };
