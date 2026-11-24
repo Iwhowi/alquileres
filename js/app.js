@@ -19,8 +19,9 @@ import { accionesSync, guardarServidor, recibirDeOtroMovil } from './sync-ui.js'
 import { guardarArchivo, leerBlob, obtenerBlob, ponerBlob, crearZip, leerZip, extension, urlDe } from './docs.js';
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
+import { abrirVoz, MICRO } from './voz.js';
 
-app.version = '2.13.0';
+app.version = '2.14.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -136,11 +137,26 @@ function renderNav(activa, entrando) {
   document.getElementById('tabbar').innerHTML =
     movil.map(([k, t, i]) => `<a href="#/${k}" class="tab${activa === k ? ' active' : ''}${activa === k && entrando ? ' salto' : ''}"${activa === k ? ' aria-current="page"' : ''}>${ICON[i]}<span>${t}</span>${badge(k)}</a>`).join('') +
     `<button class="tab${enMas ? ' active' : ''}" data-action="menu-mas">${ICON.mas}<span>Más</span></button>`;
+  ponerMicro(true);
+}
+
+/** Botón flotante del micro para dictar gastos y cobros. */
+function ponerMicro(ver) {
+  let b = document.getElementById('micro');
+  if (!b) {
+    b = document.createElement('button');
+    b.id = 'micro'; b.type = 'button'; b.className = 'micro-fab'; b.dataset.action = 'voz';
+    b.setAttribute('aria-label', 'Dictar un gasto o un cobro'); b.title = 'Dictar un gasto o un cobro';
+    b.innerHTML = MICRO;
+    document.body.append(b);
+  }
+  b.hidden = !ver;
 }
 
 function renderBienvenida() {
   document.getElementById('sidenav').innerHTML = '';
   document.getElementById('tabbar').innerHTML = '';
+  ponerMicro(false);
   delete document.body.dataset.ruta;
   vieneDeBienvenida = true;
   irAPlanta('__portal');
@@ -187,6 +203,7 @@ function renderBienvenida() {
 /* ───────────── Acciones ───────────── */
 
 const acciones = {
+  voz: () => abrirVoz(),
   empezar: () => { app.s = estructuraInicial(); commit('Cartera creada. Empieza por los datos de cada piso.'); location.hash = '#/pisos'; },
   'cargar-demo': async () => {
     if (app.s && !app.s.ajustes.demo && !(await confirmar('Cargar datos de ejemplo', 'Se sustituirán tus datos actuales por datos ficticios. Exporta antes una copia si quieres conservarlos.', { ok: 'Cargar ejemplo' }))) return;

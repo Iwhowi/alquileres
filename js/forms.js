@@ -420,13 +420,16 @@ export function formTitular(id) {
 
 /* ───────────── Gastos ───────────── */
 
-export function formGasto(id, pisoId) {
+export function formGasto(id, pisoId, pre = null) {
   const g = id ? app.s.gastos.find((x) => x.id === id) : null;
   const v = g || { fecha: today(), pisoId: pisoId || app.ui.ultimoPiso || app.s.pisos[0]?.id, categoria: app.ui.ultimaCat || 'reparacion', concepto: '', proveedor: '', importe: 0, extraordinario: false, deducible: true };
+  // Datos dictados por voz: rellenan el formulario, pero se guardan solo al pulsar «Guardar»
+  if (!g && pre) for (const [k, x] of Object.entries(pre)) if (k !== 'nota' && x != null && x !== '') v[k] = x;
   const form = abrirDialogo({
     titulo: g ? 'Editar gasto' : 'Nuevo gasto',
     cuerpo: html`
       ${g?.recurrenteId ? html`<p class="muted">Generado por un gasto fijo. Los cambios afectan solo a este apunte.</p>` : ''}
+      ${pre?.nota ? html`<p class="voz-nota">${pre.nota}</p>` : ''}
       <div class="form-grid">
         ${campo('Fecha', inp('fecha', v.fecha, { type: 'date', req: true }))}
         ${campo('Importe', money('importe', v.importe, { req: true }))}

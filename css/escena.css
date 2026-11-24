@@ -614,3 +614,24 @@ details.libre-hoja:not([open]) > summary { margin-bottom: 0; }
 .sync-avanzado summary { cursor: pointer; }
 .sync-servidor { display: flex; gap: 8px; margin-top: 8px; }
 .sync-servidor input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 13px; }
+
+/* ───────────── Dictar por voz ───────────── */
+.micro-fab { position: fixed; z-index: 21; right: 18px; bottom: calc(24px + env(safe-area-inset-bottom)); width: 58px; height: 58px; border-radius: 50%; border: 0; display: grid; place-items: center; color: #fff; background: var(--accent); box-shadow: 0 6px 18px rgba(0,0,0,.22), 0 1px 3px rgba(0,0,0,.2); cursor: pointer; transition: transform .15s; }
+.micro-fab:active { transform: scale(.94); }
+.micro-fab[hidden] { display: none; }
+@media (max-width: 899px) { .micro-fab { right: 14px; bottom: calc(var(--tabbar) + 18px + env(safe-area-inset-bottom)); width: 54px; height: 54px; } }
+body:has(dialog[open]) .micro-fab { visibility: hidden; }
+.voz { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.voz-micro { width: 84px; height: 84px; border-radius: 50%; border: 0; display: grid; place-items: center; color: #fff; background: var(--accent); cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+.voz-micro svg { width: 36px; height: 36px; }
+.voz-micro.on { background: #d4483b; animation: voz-latido 1.2s ease-in-out infinite; }
+@keyframes voz-latido { 0%, 100% { box-shadow: 0 0 0 0 rgba(212,72,59,.45); } 50% { box-shadow: 0 0 0 16px rgba(212,72,59,0); } }
+.voz-estado { margin: 0; text-align: center; color: var(--muted); }
+.voz-texto { width: 100%; font: inherit; font-size: 17px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: inherit; resize: vertical; }
+.voz-aviso { width: 100%; margin: 0; }
+.voz-ejemplos { width: 100%; font-size: 14px; }
+.voz-ejemplos summary { cursor: pointer; color: var(--accent); font-weight: 560; }
+.voz-ejemplos ul { margin: 8px 0; padding-left: 18px; }
+.voz-nota { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, transparent); font-size: 14px; }
+.voz-lista { display: flex; flex-direction: column; gap: 8px; }
+.voz-opcion { display: flex; justify-content: space-between; gap: 10px; text-align: left; width: 100%; }
