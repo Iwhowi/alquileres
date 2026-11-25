@@ -37,7 +37,7 @@ export function cifras(texto) {
 
 /* ───────────── Importe ───────────── */
 
-function importe(t) {
+export function importe(t) {
   // «120 con 50», «120,50 €», «1.250 euros», «120 euros con 50 céntimos»
   let m = t.match(/(\d[\d.]*)(?:,(\d{1,2}))?\s*(?:euros?|eur|€)?\s*con\s*(\d{1,2})\b/);
   if (m) return Number(m[1].replace(/\./g, '')) + Number(m[3].padEnd(2, '0')) / 100;
@@ -94,7 +94,7 @@ function fecha(t, hoy) {
 /* ───────────── Pisos, habitaciones e inquilinos ───────────── */
 
 const VACIAS = new Set(['piso', 'calle', 'c', 'cl', 'avda', 'avenida', 'plaza', 'pza', 'paseo', 'de', 'del', 'la', 'el', 'los', 'las', 'y', 'n', 'no', 'num', 'numero', 'bajo', 'sevilla', 'madrid', 'en', 'a', 'casa', 'apartamento', 'vivienda', 'izq', 'izquierda', 'dcha', 'derecha']);
-const palabras = (t) => norm(t).replace(/[.,:;]/g, ' ').split(' ').filter((w) => w && !VACIAS.has(w) && !/^\d+[a-z]?$/.test(w) && w.length > 1);
+export const palabras = (t) => norm(t).replace(/[.,:;]/g, ' ').split(' ').filter((w) => w && !VACIAS.has(w) && !/^\d+[a-z]?$/.test(w) && w.length > 1);
 
 function lev(a, b) {
   if (Math.abs(a.length - b.length) > 2) return 9;
@@ -103,7 +103,7 @@ function lev(a, b) {
   for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
   return d[a.length][b.length];
 }
-const parecida = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && lev(a, b) <= (Math.min(a.length, b.length) >= 7 ? 2 : 1)) || (a.length >= 5 && b.startsWith(a)) || (b.length >= 5 && a.startsWith(b));
+export const parecida = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && lev(a, b) <= (Math.min(a.length, b.length) >= 7 ? 2 : 1)) || (a.length >= 5 && b.startsWith(a)) || (b.length >= 5 && a.startsWith(b));
 
 /** Puntuación de cuánto se parece lo dicho al nombre (o dirección) de un piso. */
 function puntos(dichas, nombre) {
@@ -114,7 +114,7 @@ function puntos(dichas, nombre) {
   return ok / Math.max(1.5, ps.length * 0.75);
 }
 
-function buscarPiso(t, s) {
+export function buscarPiso(t, s) {
   const dichas = palabras(t);
   let mejor = null;
   for (const p of s.pisos || []) {
@@ -126,14 +126,15 @@ function buscarPiso(t, s) {
   return mejor && mejor.sc >= 0.6 ? mejor.p : null;
 }
 
-function buscarUnidad(t, s, pisoId) {
+export function buscarUnidad(t, s, pisoId) {
   const x = t.match(/\b(?:habitacion|hab)\s*(?:numero\s*)?(\d+)/);
   if (!x || !pisoId) return null;
   return (s.unidades || []).find((u) => u.pisoId === pisoId && new RegExp(`\\b${x[1]}\\b`).test(norm(u.nombre))) || null;
 }
 
-function buscarInquilino(t, s) {
-  const dichas = palabras(t);
+const NO_NOMBRE = /^(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|lunes|martes|miercoles|jueves|viernes|sabado|domingo|renta|fianza|piso|contrato|gasto|alquiler|pagado|cobrado|habitacion|final|desde|hasta|telefono|correo|email)$/;
+export function buscarInquilino(t, s) {
+  const dichas = palabras(t).filter((w) => !NO_NOMBRE.test(w));
   let mejor = null;
   for (const k of s.contratos || []) {
     if (k.finalizado) continue;
@@ -170,7 +171,7 @@ const PROVEEDORES = ['endesa', 'iberdrola', 'naturgy', 'repsol', 'holaluz', 'tot
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const capTodo = (t) => t.replace(/(^|\s)\S/g, (x) => x.toUpperCase());
 
-function tema(t) {
+export function tema(t) {
   for (const [cat, re, nombre] of TEMAS) {
     const x = t.match(re);
     if (x) {

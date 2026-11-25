@@ -21,7 +21,7 @@ import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, d
 import { entrar, pildoras, indicadorNav } from './motion.js';
 import { abrirVoz, MICRO } from './voz.js';
 
-app.version = '2.14.0';
+app.version = '2.15.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -146,7 +146,7 @@ function ponerMicro(ver) {
   if (!b) {
     b = document.createElement('button');
     b.id = 'micro'; b.type = 'button'; b.className = 'micro-fab'; b.dataset.action = 'voz';
-    b.setAttribute('aria-label', 'Dictar un gasto o un cobro'); b.title = 'Dictar un gasto o un cobro';
+    b.setAttribute('aria-label', 'Hablar con la app'); b.title = 'Hablar con la app';
     b.innerHTML = MICRO;
     document.body.append(b);
   }

@@ -4,6 +4,7 @@
 import { html, raw, abrirDialogo, cerrarDialogo, alCerrar, toast, fmtEUR, fmtMes, esc } from './ui.js';
 import { app } from './state.js';
 import { interpretar } from './voz-interpretar.js';
+import { ordenar } from './voz-ordenes.js';
 import * as F from './forms.js';
 
 const Reconocimiento = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
@@ -13,10 +14,10 @@ const hoy = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).
 const nombrePiso = (id) => app.s.pisos.find((p) => p.id === id)?.nombre || '';
 
 const EJEMPLOS = [
-  'Gasto de luz de noviembre en Ramón y Cajal de 120 euros',
-  'He pagado 80 euros al fontanero en Juan de Ledesma',
-  'Comunidad de Sigüenza 65 euros',
-  'Miguel ha pagado el alquiler de noviembre',
+  ['Gastos', ['Gasto de luz de noviembre en Ramón y Cajal de 120 euros', 'He pagado 80 euros al fontanero en Juan de Ledesma', 'Comunidad de Sigüenza 60 euros todos los meses', 'Corrige el gasto de luz de noviembre de Sigüenza, son 125 euros']],
+  ['Cobros', ['Miguel ha pagado el alquiler de noviembre', 'Marca cobrado noviembre de Sigüenza']],
+  ['Inquilinos y contratos', ['Nuevo inquilino Pedro García en la habitación 2 de Juan de Ledesma desde el 1 de diciembre, 400 euros, fianza 400, por un año', 'Miguel se va el 30 de junio', 'Renueva el contrato de Claudia con un 3 %', 'Sube la renta de Claudia a 420 desde enero', 'Cambia el teléfono de Claudia a 654 321 987', 'Ponle a Miguel una nota que diga paga por Bizum']],
+  ['Pisos, reservas e hipotecas', ['Reserva en Hornos de Juan Pérez del 5 al 8 de diciembre por 300 euros por Airbnb', 'El valor de mercado de Ramón y Cajal es 210.000 euros', 'La cuota de la hipoteca de Sigüenza es de 650 euros', 'Abre Juan de Ledesma', 'Llévame a cobros']],
 ];
 
 export function abrirVoz() {
@@ -36,8 +37,8 @@ export function abrirVoz() {
         <textarea name="frase" rows="3" class="voz-texto" placeholder="Lo que digas aparecerá aquí. También puedes escribirlo o corregirlo."></textarea>
         <p class="voz-aviso form-error" data-voz-aviso hidden></p>
         <details class="voz-ejemplos"><summary>Ejemplos de lo que puedes decir</summary>
-          <ul>${EJEMPLOS.map((e) => html`<li>«${e}»</li>`)}</ul>
-          <p class="muted small">Di el piso, qué es, el mes y el importe. Antes de guardar verás el formulario relleno para revisarlo.</p>
+          ${EJEMPLOS.map(([g, xs]) => html`<p class="voz-grupo">${g}</p><ul>${xs.map((e) => html`<li>«${e}»</li>`)}</ul>`)}
+          <p class="muted small">Puedes cambiar por voz cualquier dato que se cambia a mano. Antes de guardar verás el formulario relleno, con lo que has dicho marcado en color.</p>
         </details>
       </div>`,
     submit: (d) => {
@@ -83,6 +84,8 @@ export function abrirVoz() {
       // Al terminar de hablar se interpreta solo, si lo entendido es completo
       const frase = caja.value.trim();
       if (frase && form.isConnected && document.getElementById('dialogo').open) {
+        const o = ordenar(frase, app.s, hoy());
+        if (o) { if (o.tipo !== 'nada') actuar(frase, aviso); return; }
         const r = interpretar(frase, app.s, hoy());
         if ((r.tipo === 'gasto' && !r.faltan.length) || (r.tipo === 'cobro' && r.candidatos.length === 1)) actuar(frase, aviso);
       }
@@ -100,6 +103,8 @@ export function abrirVoz() {
 
 /** Hace lo que pide la frase. Devuelve false si el diálogo de voz debe quedarse abierto. */
 function actuar(frase, aviso) {
+  const o = ordenar(frase, app.s, hoy());
+  if (o) return ejecutar(o, frase, aviso);
   const r = interpretar(frase, app.s, hoy());
   if (r.tipo === 'gasto') {
     const partes = [r.importe != null ? fmtEUR(r.importe) : null, r.concepto || null, r.pisoId ? nombrePiso(r.pisoId) : null].filter(Boolean);
@@ -124,6 +129,72 @@ function actuar(frase, aviso) {
   }
   aviso('No lo he entendido. Di, por ejemplo: «gasto de luz de noviembre en Ramón y Cajal de 120 euros».');
   return false;
+}
+
+/* ───────────── Órdenes: abren el formulario de siempre con los campos dichos ya rellenos ───────────── */
+
+const ABRIR = {
+  contrato: (o) => (o.id ? F.formContrato(o.id) : o.pisoId ? F.formContrato(null, { pisoId: o.pisoId, unidadId: o.unidadId }) : null),
+  finalizar: (o) => o.id && F.finalizarContrato(o.id),
+  renovar: (o) => o.id && F.renovar(o.id),
+  renta: (o) => o.id && F.actualizarRenta(o.id),
+  reserva: (o) => F.formReserva(null, { pisoId: o.pisoId || undefined, fecha: o.campos.entrada }),
+  recurrente: (o) => F.formRecurrente(null, o.pisoId || app.s.pisos[0]?.id),
+  hipoteca: (o) => F.formHipoteca(o.id, o.pisoId),
+  gasto: (o) => F.formGasto(o.id),
+  unidad: (o) => F.formUnidad(null, o.pisoId),
+  piso: (o) => F.formPiso(o.id),
+  titular: (o) => F.formTitular(o.id),
+};
+
+function ejecutar(o, frase, aviso) {
+  if (o.tipo === 'nada') { aviso(o.resumen); return false; }
+  if (o.tipo === 'ir') { cerrarDialogo(); location.hash = o.ruta; toast(o.resumen); return false; }
+  if (o.form === 'contrato' && !o.id && !o.pisoId) { aviso('¿En qué piso? Di el piso (y la habitación, si se alquila por habitaciones).'); return false; }
+  if (['finalizar', 'renovar', 'renta'].includes(o.form) && !o.id) { aviso('¿De quién es el contrato? Di el nombre del inquilino, o el piso y la habitación.'); return false; }
+  if (o.form === 'reserva' && o.pisoId && app.s.pisos.find((p) => p.id === o.pisoId)?.modalidad !== 'turistico') { aviso('Ese piso no es turístico: las reservas son para pisos de alquiler turístico.'); return false; }
+  ABRIR[o.form](o);
+  const form = document.querySelector('#dialogo form');
+  if (!form) return false;
+  const marcados = rellenar(form, { ...(o.unidadId && !o.id ? { unidadId: o.unidadId } : {}), ...(o.campos || {}) });
+  const partes = [`Has dicho: «${frase}».`];
+  if (marcados) partes.push(`He rellenado ${marcados === 1 ? 'lo marcado' : 'los campos marcados'} en color.`);
+  if (o.faltan?.length) partes.push(`Falta ${o.faltan.join(', ')}: complétalo aquí.`);
+  if (o.borrar) partes.push('Para borrarlo, pulsa «Eliminar» abajo.');
+  if (o.otros) partes.push(`Hay ${o.otros} gasto${o.otros > 1 ? 's' : ''} más que encajan: si no es este, búscalo en Gastos.`);
+  partes.push(o.borrar ? '' : 'Revisa y pulsa el botón para guardar.');
+  const p = document.createElement('p');
+  p.className = 'voz-nota';
+  p.textContent = partes.filter(Boolean).join(' ');
+  form.querySelector('.dlg-body')?.prepend(p);
+  if (o.aviso) { const a = document.createElement('p'); a.className = 'form-error'; a.textContent = o.aviso; p.after(a); }
+  return false;
+}
+
+/** Pone los valores en los campos del formulario abierto y los marca. Devuelve cuántos ha puesto. */
+function rellenar(form, campos) {
+  let n = 0;
+  const avisar = (el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); el.closest('.field, .check')?.classList.add('voz-marcado'); n++; };
+  for (const [k, v] of Object.entries(campos)) {
+    if (v == null || v === '') continue;
+    const m = form.elements[`${k}__m`];
+    if (m) {
+      const [yy, mm] = String(v).split('-');
+      const y = form.elements[`${k}__y`];
+      if (![...y.options].some((x) => x.value === yy)) y.add(new Option(yy, yy));
+      m.value = mm; y.value = yy;
+      avisar(m);
+      continue;
+    }
+    const el = form.elements[k];
+    if (!el || el.readOnly) continue;
+    if (el.type === 'checkbox') el.checked = !!v;
+    else if (el.tagName === 'SELECT') { if (![...el.options].some((x) => x.value === String(v))) continue; el.value = String(v); }
+    else if (typeof v === 'number' && el.type !== 'number') el.value = Number.isInteger(v) ? String(v) : v.toFixed(2).replace('.', ',');
+    else el.value = String(v);
+    avisar(el);
+  }
+  return n;
 }
 
 function elegirCobro(cands, frase) {

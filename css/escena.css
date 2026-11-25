@@ -635,3 +635,6 @@ body:has(dialog[open]) .micro-fab { visibility: hidden; }
 .voz-nota { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, transparent); font-size: 14px; }
 .voz-lista { display: flex; flex-direction: column; gap: 8px; }
 .voz-opcion { display: flex; justify-content: space-between; gap: 10px; text-align: left; width: 100%; }
+.voz-marcado input, .voz-marcado select, .voz-marcado textarea { border-color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 9%, var(--surface)) !important; }
+.voz-marcado .field-label { color: var(--accent); }
+.voz-grupo { margin: 10px 0 2px; font-weight: 600; font-size: 13px; }
