@@ -40,7 +40,7 @@ export function cifras(texto) {
 export function importe(t) {
   // «120 con 50», «120,50 €», «1.250 euros», «120 euros con 50 céntimos»
   let m = t.match(/(\d[\d.]*)(?:,(\d{1,2}))?\s*(?:euros?|eur|€)?\s*con\s*(\d{1,2})\b/);
-  if (m) return Number(m[1].replace(/\./g, '')) + Number(m[3].padEnd(2, '0')) / 100;
+  if (m) return Number(m[1].replace(/\./g, '')) + Number(m[3]) / 100; // «120 con 5» = 120,05
   const candidatos = [];
   const re = /(\d{1,3}(?:\.\d{3})+|\d+)(?:[,.](\d{1,2}))?(?!\d)\s*(euros?|eur|€|pavos)?/g;
   while ((m = re.exec(t))) {
@@ -140,7 +140,7 @@ export function buscarInquilino(t, s) {
     if (k.finalizado) continue;
     const ps = palabras(k.inquilino);
     const ok = ps.filter((p) => p.length >= 3 && dichas.some((w) => parecida(w, p))).length;
-    if (ok && ok > (mejor?.ok || 0)) mejor = { k, ok };
+    if (ok && (ok > (mejor?.ok || 0) || (ok === mejor.ok && k.inicio > mejor.k.inicio))) mejor = { k, ok };
   }
   return mejor?.k || null;
 }
@@ -201,7 +201,7 @@ export function interpretar(texto, s, hoy) {
     const unidad = buscarUnidad(t, s, pisoId);
     const periodo = f.periodo;
     let cands = (s.cobros || []).filter((c) => !c.anulado && c.periodo === periodo && (!pisoId || c.pisoId === pisoId) && num(c.cobrado) < num(c.importe) - 0.005);
-    if (inq) cands = cands.filter((c) => c.contratoId === inq.id);
+    if (inq) cands = cands.filter((c) => c.contratoId === inq.id || (!c.contratoId && c.unidadId === inq.unidadId && c.pagador === inq.inquilino));
     else if (unidad) cands = cands.filter((c) => c.unidadId === unidad.id);
     if (/\b(alquiler|renta|mensualidad)\b/.test(t)) { const r = cands.filter((c) => c.auto || /renta|alquiler/i.test(c.concepto || '')); if (r.length) cands = r; }
     const imp = importe(t);

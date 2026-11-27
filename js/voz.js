@@ -120,12 +120,12 @@ function actuar(frase, aviso) {
     const quien = r.inquilino || (r.pisoId ? nombrePiso(r.pisoId) : '');
     if (!quien) { aviso('No sé de qué piso o inquilino es el cobro. Di su nombre o el piso.'); return false; }
     const cands = r.candidatos;
-    if (cands.length === 1) { F.cobrar('cobro', cands[0].id); return false; }
+    if (cands.length === 1) { abrirCobro(cands[0].id, r); return false; }
     if (!cands.length) {
       aviso(`No encuentro nada pendiente de cobrar de ${quien} en ${fmtMes(r.periodo)}. Puede que ya esté cobrado: míralo en Cobros.`);
       return false;
     }
-    elegirCobro(cands, frase);
+    elegirCobro(cands, frase, r);
     return false;
   }
   aviso('No lo he entendido. Di, por ejemplo: «gasto de luz de noviembre en Ramón y Cajal de 120 euros».');
@@ -199,7 +199,18 @@ export function rellenar(form, campos) {
   return n;
 }
 
-function elegirCobro(cands, frase) {
+/** Pantalla de «Marcar cobrado» con la cantidad y la fecha dichas, si se dijeron. */
+function abrirCobro(id, r) {
+  F.cobrar('cobro', id);
+  const form = document.querySelector('#dialogo form');
+  if (!form) return;
+  const c = {};
+  if (r.importe != null) c.cantidad = r.importe;
+  if (r.fechaCobro && r.fechaCobro !== hoy()) c.fecha = r.fechaCobro;
+  rellenar(form, c);
+}
+
+function elegirCobro(cands, frase, r) {
   const nombre = (c) => app.s.contratos.find((k) => k.id === c.contratoId)?.inquilino || c.pagador || '';
   abrirDialogo({
     titulo: '¿Qué cobro es?',
@@ -207,7 +218,7 @@ function elegirCobro(cands, frase) {
       <p class="muted">Has dicho: «${frase}». Hay varios pendientes:</p>
       <div class="voz-lista">${cands.map((c) => html`<button type="button" class="btn voz-opcion" data-voz-cobro="${c.id}"><span><strong>${nombre(c)}</strong> · ${c.concepto}</span><b>${fmtEUR(c.importe - (Number(c.cobrado) || 0))}</b></button>`)}</div>`,
   });
-  document.querySelectorAll('[data-voz-cobro]').forEach((b) => b.addEventListener('click', () => F.cobrar('cobro', b.dataset.vozCobro)));
+  document.querySelectorAll('[data-voz-cobro]').forEach((b) => b.addEventListener('click', () => abrirCobro(b.dataset.vozCobro, r)));
 }
 
 /**

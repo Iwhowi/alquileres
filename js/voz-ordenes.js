@@ -154,7 +154,11 @@ export function camposReparto(original, s, hoy, pisoId) {
   else if (fs.length === 1) { campos.inicio = fs[0].fecha; if (fs[0].soloMes) campos.fin = sumarDias(sumarMeses(fs[0].fecha, 1), -1); }
   const tipos = [['luz', /\b(luz|electricidad|endesa|iberdrola)\b/], ['agua', /\b(agua|emasesa)\b/], ['gas', /\b(gas|naturgy)\b/], ['internet', /\b(internet|fibra|wifi)\b/], ['limpieza', /\b(limpieza)\b/]];
   const dichos = tipos.filter(([, re]) => re.test(t));
-  for (const [k, re] of dichos) { const v = numeroCerca(t, re, { antes: dichos.length === 1 }); if (v != null && v > 31) campos[`f_${k}`] = v; else if (v != null && !/ de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/.test(t.slice(t.search(re), t.search(re) + 30))) campos[`f_${k}`] = v; }
+  for (const [k, re] of dichos) {
+    const delante = t.match(new RegExp(`(\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:,(\\d{1,2}))?\\s*(?:euros?\\s+)?(?:de|del|en)\\s+(?:la\\s+|el\\s+)?(?:factura\\s+de\\s+(?:la\\s+|el\\s+)?)?${re.source}`));
+    if (delante) campos[`f_${k}`] = Number(delante[1].replace(/\./g, '')) + (delante[2] ? Number(delante[2].padEnd(2, '0')) / 100 : 0);
+  }
+  for (const [k, re] of dichos) { if (campos[`f_${k}`] != null) continue; const v = numeroCerca(t, re, { antes: dichos.length === 1 }); if (v != null && v > 31) campos[`f_${k}`] = v; else if (v != null && !/ de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/.test(t.slice(t.search(re), t.search(re) + 30))) campos[`f_${k}`] = v; }
   if (dichos.length === 1 && campos[`f_${dichos[0][0]}`] == null) { const v = importe(t); if (v != null) campos[`f_${dichos[0][0]}`] = v; }
   const tope = numeroCerca(t, /\b(tope|incluido|incluidos|maximo|limite)\b/, { antes: false });
   if (tope != null) campos.tope = tope;
@@ -241,8 +245,8 @@ export function ordenar(original, s, hoy) {
   }
 
   // Fin de contrato
-  if (/\b(finaliza|finalizar|finalizo|termina|terminar|termino|da de baja|dar de baja|baja de|baja a|se va|se marcha|se fue|se ha ido|se ha marchado|deja la habitacion|deja el piso|dejo la habitacion|dejo el piso|sale del piso|rescinde|rescindir|acaba el contrato|fin del contrato|fin de contrato|ha terminado|abandona)\b/.test(t)
-      && !/\b(cambia|cambiar|corrige|modifica|pon|ponle)\b/.test(t)) {
+  if (/\b(finaliza|finalizar|finalizo|termina|terminar|termino|da de baja|dar de baja|baja de|se va|se marcha|se fue|se ha ido|se ha marchado|deja la habitacion|deja el piso|dejo la habitacion|dejo el piso|sale del piso|rescinde|rescindir|acaba el contrato|fin del contrato|fin de contrato|ha terminado|abandona)\b/.test(t)
+      && !/\b(cambia|cambiar|corrige|modifica|pon|ponle)\b/.test(t) && !/\b(hipoteca|renta|cuota|mensualidad|prestamo)\b/.test(t)) {
     const k = contratoDe(t, s, hoy);
     if (!k) return { tipo: 'form', form: 'finalizar', id: null, campos: {}, faltan: ['de quién es el contrato'], resumen: 'Finalizar contrato' };
     const fs = fechas(t, hoy, true);
@@ -326,7 +330,7 @@ export function ordenar(original, s, hoy) {
     const ini = fechaTras(t, fs, /\b(desde|a partir de|empezando|primer cargo|empieza)\b/);
     const diaM = t.match(/\b(?:el\s+)?(?:dia\s+)?(\d{1,2})\s+de\s+cada\s+mes\b/);
     if (ini) campos.desde = ini.fecha;
-    else if (diaM) campos.desde = `${hoy.slice(0, 8)}${p2(diaM[1])}`;
+    else if (diaM) { const [yy, mm] = hoy.split('-').map(Number); campos.desde = iso(yy, mm, Number(diaM[1])); }
     const hasta = fechaTras(t, fs, /\b(hasta|termina)\b/); if (hasta) campos.hasta = hasta.fecha;
     const faltan = []; if (!piso) faltan.push('el piso'); if (imp == null) faltan.push('el importe');
     return { tipo: 'form', form: 'recurrente', pisoId: piso?.id || null, campos, faltan, resumen: 'Nuevo gasto fijo' };

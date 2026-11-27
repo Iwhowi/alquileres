@@ -7,7 +7,7 @@ import { app, commit } from './state.js';
 import { uid } from './store.js';
 import { dictarEn, rellenar, MICRO } from './voz.js';
 import { camposReparto } from './voz-ordenes.js';
-import { CAT, addDays, diffDays, ymOf, addMonths, dayInMonth, telefonoWhatsApp, todayISO } from './calc.js';
+import { CAT, num, r2, addDays, diffDays, ymOf, addMonths, dayInMonth, telefonoWhatsApp, todayISO } from './calc.js';
 
 export const FACTURAS = [
   ['luz', 'Luz', /luz|electric|endesa|iberdrola|holaluz|repsol/],
@@ -17,8 +17,7 @@ export const FACTURAS = [
   ['limpieza', 'Limpieza', /limpieza|limpiadora/],
   ['otros', 'Otros', null],
 ];
-const r2 = (x) => Math.round(x * 100) / 100;
-const n = (v) => Number(String(v ?? '').replace(/\./g, '').replace(',', '.')) || 0;
+const n = num;
 const nd = (v) => Number(String(v ?? '').replace(',', '.')) || 0;
 
 /** Inquilinos del piso con contrato durante el periodo y los días que han estado (ambos días incluidos). */
@@ -46,8 +45,9 @@ export function repartir(facturas, ocupantes, tope = 0) {
   for (const [clave, importe] of Object.entries(facturas)) {
     if (!(importe > 0) || !total) continue;
     let resto = r2(importe);
+    const ultimo = filas.reduce((u, f, i) => (f.dias > 0 ? i : u), -1);
     filas.forEach((f, i) => {
-      const parte = i === filas.length - 1 ? resto : r2((importe * f.dias) / total);
+      const parte = f.dias <= 0 ? 0 : i === ultimo ? resto : r2((importe * f.dias) / total);
       f.partes[clave] = parte;
       f.total = r2(f.total + parte);
       resto = r2(resto - parte);
@@ -258,7 +258,7 @@ function datosTicket(p, r, f, tope) {
     pago: `Con la mensualidad, antes del ${venc.split('-').reverse().join('/')}`,
     iban,
     telefono: f.k.telefono || '',
-    nombreArchivo: `Suministros ${f.k.inquilino} ${r.inicio.slice(0, 7)}.png`.replace(/[^\w .-]/g, ''),
+    nombreArchivo: `Suministros ${f.k.inquilino} ${r.inicio.slice(0, 7)}.png`.replace(/[\\/:*?"<>|]/g, ''),
   };
 }
 
