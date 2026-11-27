@@ -34,7 +34,10 @@ export function vistaCobros() {
   return html`
     <header class="page-head">
       <div><h1>Cobros</h1><p class="muted">Recibos de contratos y reservas del turístico</p></div>
-      <button class="btn btn-primary" data-action="nuevo-cobro">${raw(ICON.plus)}<span>Cobro manual</span></button>
+      <div class="head-actions">
+        ${app.s.pisos.some((p) => p.modalidad === 'habitaciones') ? html`<button class="btn" data-action="reparto">Repartir suministros</button>` : ''}
+        <button class="btn btn-primary" data-action="nuevo-cobro">${raw(ICON.plus)}<span>Cobro manual</span></button>
+      </div>
     </header>
 
     <section class="kpis kpis-3">

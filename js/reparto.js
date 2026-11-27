@@ -58,7 +58,20 @@ function siguienteVencimiento(k, fin) {
 const nombreMes = (ym, hoy) => cap(mesNombre(Number(ym.slice(5, 7)))) + (ym.slice(0, 4) !== hoy.slice(0, 4) ? ` ${ym.slice(0, 4)}` : '');
 const lista = (xs) => (xs.length <= 1 ? xs[0] || 'suministros' : `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}`);
 
+/** Sin piso: si solo hay uno por habitaciones se abre ese; si hay varios, se elige. */
+function elegirPiso() {
+  const pisos = app.s.pisos.filter((x) => x.modalidad === 'habitaciones');
+  if (pisos.length === 1) { abrirReparto(pisos[0].id); return; }
+  abrirDialogo({
+    titulo: 'Repartir suministros',
+    cuerpo: html`<p class="muted">¿De qué piso es la factura?</p>
+      <div class="voz-lista">${pisos.map((x) => html`<button type="button" class="btn voz-opcion" data-reparto-piso="${x.id}"><strong>${x.nombre}</strong></button>`)}</div>`,
+  });
+  document.querySelectorAll('[data-reparto-piso]').forEach((b) => b.addEventListener('click', () => abrirReparto(b.dataset.repartoPiso)));
+}
+
 export function abrirReparto(pisoId) {
+  if (!pisoId) { elegirPiso(); return; }
   const p = app.s.pisos.find((x) => x.id === pisoId);
   if (!p) return;
   const hoy = todayISO();

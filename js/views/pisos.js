@@ -81,6 +81,7 @@ export function vistaPiso(id) {
       </div>
       <div class="head-actions">
         ${selectorMes(ym, 'mes')}
+        ${p.modalidad === 'habitaciones' ? html`<button class="btn btn-primary" data-action="reparto" data-piso="${p.id}">Repartir suministros</button>` : ''}
         <button class="btn" data-action="editar-piso" data-id="${p.id}">${raw(ICON.edit)}<span>Datos</span></button>
       </div>
     </header>
@@ -112,7 +113,7 @@ function bloqueUnidades(p) {
     <section class="card">
       <div class="card-head">
         <h2>${habit ? 'Habitaciones e inquilinos' : 'Inquilino y contrato'}</h2>
-        ${habit ? html`<div class="card-actions"><button class="btn btn-sm" data-action="reparto" data-piso="${p.id}">Repartir suministros</button><button class="btn btn-sm" data-action="nueva-unidad" data-piso="${p.id}">${raw(ICON.plus)}<span>Habitación</span></button></div>` : ''}
+        ${habit ? html`<button class="btn btn-sm" data-action="nueva-unidad" data-piso="${p.id}">${raw(ICON.plus)}<span>Habitación</span></button>` : ''}
       </div>
       <ul class="units">
         ${uds.map((u) => {
