@@ -4,22 +4,37 @@
 
 export const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ.,€%\s-]/g, ' ').replace(/\s+/g, ' ').trim();
 
-const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-const NOMBRE_MES = (m) => MESES[m - 1];
+import { num, pad, addDays, addMonths, ymOf, daysInMonth, dayInMonth, mesLargo } from './calc.js';
+
+export const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+/** Nombre de mes (incluye «setiembre») para usar dentro de expresiones regulares. */
+export const RE_MES = '(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)';
+export const numMes = (n) => (n === 'setiembre' ? 9 : MESES.indexOf(n) + 1);
+export const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** Facturas de suministros (clave, nombre, cómo se reconocen por voz o en el concepto de un gasto). */
+export const SUMINISTROS = [
+  ['luz', 'Luz', /\b(luz|electricidad|electrica|endesa|iberdrola|holaluz|repsol|totalenergies)\b/],
+  ['agua', 'Agua', /\b(agua|emasesa|aljarafesa|canal de isabel)\b/],
+  ['gas', 'Gas', /\b(gas|butano|naturgy)\b/],
+  ['internet', 'Internet', /\b(internet|fibra|wifi|router|movistar|vodafone|orange|digi|jazztel|masmovil|pepephone)\b/],
+  ['limpieza', 'Limpieza', /\b(limpieza|limpiadora)\b/],
+];
 
 /* ───────────── Números dichos con palabras ───────────── */
 
 const UNIDADES = { cero: 0, un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20, veintiun: 21, veintiuno: 21, veintiuna: 21, veintidos: 22, veintitres: 23, veinticuatro: 24, veinticinco: 25, veintiseis: 26, veintisiete: 27, veintiocho: 28, veintinueve: 29 };
 const DECENAS = { treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90 };
 const CENTENAS = { cien: 100, ciento: 100, doscientos: 200, doscientas: 200, trescientos: 300, trescientas: 300, cuatrocientos: 400, cuatrocientas: 400, quinientos: 500, quinientas: 500, seiscientos: 600, seiscientas: 600, setecientos: 700, setecientas: 700, ochocientos: 800, ochocientas: 800, novecientos: 900, novecientas: 900 };
-const esPalabraNum = (w) => w in UNIDADES || w in DECENAS || w in CENTENAS || w === 'mil' || w === 'y';
+const esNumero = (w) => w in UNIDADES || w in DECENAS || w in CENTENAS || w === 'mil';
+const esPalabraNum = (w) => esNumero(w) || w === 'y';
 
 /** Cambia los números dichos con letras por cifras: «ciento veinte euros» → «120 euros». */
 export function cifras(texto) {
-  const ws = texto.split(' ');
+  const ws = texto.replace(/\bpor ciento\b/g, '%').split(' ');
   const out = [];
   for (let i = 0; i < ws.length; i++) {
-    if (!(ws[i] in UNIDADES || ws[i] in DECENAS || ws[i] in CENTENAS || ws[i] === 'mil')) { out.push(ws[i]); continue; }
+    if (!esNumero(ws[i])) { out.push(ws[i]); continue; }
     // «un/una» sueltos son artículos («un gasto»), no números
     if ((ws[i] === 'un' || ws[i] === 'una' || ws[i] === 'uno') && !esPalabraNum(ws[i + 1] || '') && !/^(euro|eur|€)/.test(ws[i + 1] || '')) { out.push(ws[i]); continue; }
     let total = 0, parte = 0, j = i;
@@ -34,6 +49,9 @@ export function cifras(texto) {
   }
   return out.join(' ');
 }
+
+/** Texto listo para interpretar: minúsculas, sin tildes y con los números en cifras. */
+export const preparar = (t) => cifras(norm(t));
 
 /* ───────────── Importe ───────────── */
 
@@ -63,16 +81,16 @@ function fecha(t, hoy) {
   const [ay, am, ad] = hoy.split('-').map(Number);
   let y = null, m = null, d = null;
   let x;
-  if ((x = t.match(/\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b(?:\s+(?:de|del)?\s*(\d{4}))?/))) {
-    m = x[1] === 'setiembre' ? 9 : MESES.indexOf(x[1]) + 1;
+  if ((x = t.match(new RegExp(`\\b${RE_MES}\\b(?:\\s+(?:de|del)?\\s*(\\d{4}))?`)))) {
+    m = numMes(x[1]);
     if (x[2]) y = Number(x[2]);
   }
   if ((x = t.match(/\b(?:el\s+)?(?:dia\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)/))) d = Number(x[1]);
   else if ((x = t.match(/\bdia\s+(\d{1,2})\b/))) d = Number(x[1]);
   if ((x = t.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/))) { d = Number(x[1]); m = Number(x[2]); if (x[3]) y = Number(x[3].length === 2 ? `20${x[3]}` : x[3]); }
   if (/\bhoy\b/.test(t)) { y = ay; m = am; d = ad; }
-  else if (/\bayer\b/.test(t)) { const f = new Date(Date.UTC(ay, am - 1, ad - 1)); y = f.getUTCFullYear(); m = f.getUTCMonth() + 1; d = f.getUTCDate(); }
-  else if (/\b(mes pasado|ultimo mes|mes anterior)\b/.test(t)) { m = am === 1 ? 12 : am - 1; y = am === 1 ? ay - 1 : ay; }
+  else if (/\bayer\b/.test(t)) [y, m, d] = addDays(hoy, -1).split('-').map(Number);
+  else if (/\b(mes pasado|ultimo mes|mes anterior)\b/.test(t)) [y, m] = addMonths(ymOf(hoy), -1).split('-').map(Number);
   else if (/\b(este mes|mes actual)\b/.test(t) && !m) { m = am; y = ay; }
   if ((x = t.match(/\b(?:del?\s+)?(?:ano\s+)?(20\d{2})\b/)) && !y) y = Number(x[1]);
   if (/\bano pasado\b/.test(t) && !y) y = ay - 1;
@@ -82,13 +100,11 @@ function fecha(t, hoy) {
     if (am === 12 && m === 1) y = ay + 1;
     else y = m > am + 1 ? ay - 1 : ay;
   }
-  const ultimo = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const periodo = `${y}-${String(m).padStart(2, '0')}`;
-  let dia = d ? Math.min(d, ultimo) : null;
-  if (!dia) dia = periodo === hoy.slice(0, 7) ? ad : ultimo; // mes en curso: hoy; mes pasado: su último día
-  let f = `${periodo}-${String(dia).padStart(2, '0')}`;
-  if (f > hoy && periodo === hoy.slice(0, 7)) f = hoy;
-  return { fecha: f, periodo, dicho: true, mesNombre: `${NOMBRE_MES(m)} ${y}` };
+  const periodo = `${y}-${pad(m)}`;
+  // Sin día: en el mes en curso, hoy; en otro mes, su último día
+  let f = dayInMonth(periodo, d || (periodo === ymOf(hoy) ? ad : daysInMonth(periodo)));
+  if (f > hoy && periodo === ymOf(hoy)) f = hoy;
+  return { fecha: f, periodo, dicho: true, mesNombre: mesLargo(periodo) };
 }
 
 /* ───────────── Pisos, habitaciones e inquilinos ───────────── */
@@ -133,14 +149,23 @@ export function buscarUnidad(t, s, pisoId) {
 }
 
 const NO_NOMBRE = /^(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|lunes|martes|miercoles|jueves|viernes|sabado|domingo|renta|fianza|piso|contrato|gasto|alquiler|pagado|cobrado|habitacion|final|desde|hasta|telefono|correo|email)$/;
-export function buscarInquilino(t, s) {
+/**
+ * Contrato en vigor (o recién terminado): no finalizado, sin un contrato posterior en la misma
+ * habitación ya empezado (renovaciones) y con fin dentro de los últimos 40 días o sin fin.
+ */
+export function vigente(s, k, hoy) {
+  if (k.finalizado) return false;
+  if (k.fin && k.fin < addDays(hoy, -40)) return false;
+  return !(s.contratos || []).some((o) => o !== k && o.unidadId === k.unidadId && o.inicio > k.inicio && o.inicio <= hoy);
+}
+
+export function buscarInquilino(t, s, hoy) {
   const dichas = palabras(t).filter((w) => !NO_NOMBRE.test(w));
   let mejor = null;
   for (const k of s.contratos || []) {
-    if (k.finalizado) continue;
-    const ps = palabras(k.inquilino);
-    const ok = ps.filter((p) => p.length >= 3 && dichas.some((w) => parecida(w, p))).length;
-    if (ok && (ok > (mejor?.ok || 0) || (ok === mejor.ok && k.inicio > mejor.k.inicio))) mejor = { k, ok };
+    if (!vigente(s, k, hoy)) continue;
+    const ok = palabras(k.inquilino).filter((p) => p.length >= 3 && dichas.some((w) => parecida(w, p))).length;
+    if (ok > (mejor?.ok || 0)) mejor = { k, ok };
   }
   return mejor?.k || null;
 }
@@ -149,10 +174,7 @@ export function buscarInquilino(t, s) {
 
 const TEMAS = [
   ['cuota_hipoteca', /\b(cuota de (la )?hipoteca|hipoteca|prestamo)\b/, 'Cuota de hipoteca'],
-  ['suministros', /\b(luz|electricidad|electrica|endesa|iberdrola|holaluz|repsol|totalenergies)\b/, 'Luz'],
-  ['suministros', /\b(agua|emasesa|aljarafesa|canal de isabel)\b/, 'Agua'],
-  ['suministros', /\b(gas|butano|naturgy)\b/, 'Gas'],
-  ['suministros', /\b(internet|fibra|wifi|router|telefono|movistar|vodafone|orange|digi|jazztel|masmovil)\b/, 'Internet'],
+  ...SUMINISTROS.slice(0, 4).map(([, nombre, re]) => ['suministros', re, nombre]),
   ['comunidad', /\b(comunidad|derrama|administrador de fincas)\b/, 'Comunidad'],
   ['ibi', /\b(ibi|contribucion|impuesto de bienes)\b/, 'IBI'],
   ['tasas', /\b(basura|basuras|tasa|tasas|vado)\b/, 'Tasa'],
@@ -168,7 +190,6 @@ const TEMAS = [
   ['reparacion', /\b(reparacion|reparar|arreglo|arreglar|averia|fontanero|fontaneria|electricista|cerrajero|cerradura|pintura|pintar|pintor|albanil|persiana|grifo|cisterna|mantenimiento)\b/, 'Reparación'],
 ];
 const PROVEEDORES = ['endesa', 'iberdrola', 'naturgy', 'repsol', 'holaluz', 'totalenergies', 'emasesa', 'aljarafesa', 'movistar', 'vodafone', 'orange', 'digi', 'jazztel', 'masmovil', 'pepephone', 'mapfre', 'allianz', 'axa', 'generali', 'mutua madrileña', 'linea directa', 'ikea', 'leroy merlin', 'amazon', 'airbnb', 'booking'];
-const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const capTodo = (t) => t.replace(/(^|\s)\S/g, (x) => x.toUpperCase());
 
 export function tema(t) {
@@ -190,10 +211,10 @@ export function tema(t) {
  * `s` es el estado de la app; `hoy` la fecha 'YYYY-MM-DD'.
  */
 export function interpretar(texto, s, hoy) {
-  const t = cifras(norm(texto));
+  const t = preparar(texto);
   const f = fecha(t, hoy);
   const piso = buscarPiso(t, s);
-  const inq = buscarInquilino(t, s);
+  const inq = buscarInquilino(t, s, hoy);
   const esCobro = /\b(cobrado|cobrada|cobra|cobrar|cobre|me ha pagado|ha pagado|han pagado|ha abonado|ingreso del alquiler|ha ingresado|ingresado)\b/.test(t) && !/\b(gasto|factura|he pagado|pague|pagado yo)\b/.test(t);
 
   if (esCobro) {
@@ -227,4 +248,3 @@ export function interpretar(texto, s, hoy) {
   };
 }
 
-const num = (v) => Number(v) || 0;

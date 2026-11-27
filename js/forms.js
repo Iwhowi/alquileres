@@ -1,6 +1,6 @@
 // Formularios (diálogos) de alta y edición de todas las entidades.
 import {
-  html, raw, abrirDialogo, cerrarDialogo, campo, inp, money, dec, mesSel, sel, chk, confirmar, toast, fmtEUR, fmtFecha, fmtMes,
+  html, raw, abrirDialogo, cerrarDialogo, campo, inp, money, dec, mesSel, sel, chk, confirmar, toast, fmtEUR, fmtFecha, fmtMes, errorForm,
 } from './ui.js';
 import {
   app, today, commit, piso, contrato, unidad, unidadesDe, turisticos, titular, nombreUnidad,
@@ -13,18 +13,7 @@ import {
 import { opcionesCategoria, opcionesPiso } from './views/gastos.js';
 import { zonaDocs, montarDocs, apartarDocs } from './adjuntos.js';
 
-function error(form, msg) {
-  let el = form.querySelector('.form-error');
-  if (!el) {
-    el = document.createElement('p');
-    el.className = 'form-error';
-    el.setAttribute('role', 'alert');
-    form.querySelector('.dlg-body').prepend(el);
-  }
-  el.textContent = msg;
-  el.scrollIntoView({ block: 'nearest' });
-  return false;
-}
+const error = errorForm;
 
 const borrar = (accion) => html`<button type="button" class="btn btn-ghost btn-danger-text" data-dlg-action="${accion}">Eliminar</button>`;
 
@@ -420,16 +409,13 @@ export function formTitular(id) {
 
 /* ───────────── Gastos ───────────── */
 
-export function formGasto(id, pisoId, pre = null) {
+export function formGasto(id, pisoId) {
   const g = id ? app.s.gastos.find((x) => x.id === id) : null;
   const v = g || { fecha: today(), pisoId: pisoId || app.ui.ultimoPiso || app.s.pisos[0]?.id, categoria: app.ui.ultimaCat || 'reparacion', concepto: '', proveedor: '', importe: 0, extraordinario: false, deducible: true };
-  // Datos dictados por voz: rellenan el formulario, pero se guardan solo al pulsar «Guardar»
-  if (!g && pre) for (const [k, x] of Object.entries(pre)) if (k !== 'nota' && x != null && x !== '') v[k] = x;
   const form = abrirDialogo({
     titulo: g ? 'Editar gasto' : 'Nuevo gasto',
     cuerpo: html`
       ${g?.recurrenteId ? html`<p class="muted">Generado por un gasto fijo. Los cambios afectan solo a este apunte.</p>` : ''}
-      ${pre?.nota ? html`<p class="voz-nota">${pre.nota}</p>` : ''}
       <div class="form-grid">
         ${campo('Fecha', inp('fecha', v.fecha, { type: 'date', req: true }))}
         ${campo('Importe', money('importe', v.importe, { req: true }))}

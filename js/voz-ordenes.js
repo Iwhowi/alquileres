@@ -2,29 +2,24 @@
 // renta, cambios de cualquier dato (contrato, piso, titular, hipoteca), reservas, gastos fijos y
 // navegación. Devuelve qué formulario abrir y con qué campos rellenos; el formulario es el mismo que
 // se usa a mano y no se guarda nada hasta pulsar «Guardar». Módulo puro (sin DOM).
-import { norm, cifras, importe, buscarPiso, buscarUnidad, buscarInquilino, tema, palabras, parecida } from './voz-interpretar.js';
+import { norm, preparar, importe, buscarPiso, buscarUnidad, buscarInquilino, vigente, tema, palabras, parecida, RE_MES, numMes, SUMINISTROS } from './voz-interpretar.js';
+import { pad, addDays, addMonthsISO, dayInMonth, monthEnd, monthStart, addMonths, ymOf } from './calc.js';
 
-const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-const RE_MES = '(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)';
-const numMes = (n) => (n === 'setiembre' ? 9 : MESES.indexOf(n) + 1);
-const p2 = (n) => String(n).padStart(2, '0');
-const ultimoDia = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
-const iso = (y, m, d) => `${y}-${p2(m)}-${p2(Math.min(d, ultimoDia(y, m)))}`;
-const sumarDias = (f, n) => { const d = new Date(`${f}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-const sumarMeses = (f, n) => { const [y, m, d] = f.split('-').map(Number); const t = y * 12 + m - 1 + n; return iso(Math.floor(t / 12), (t % 12) + 1, d); };
+const iso = (y, m, d) => dayInMonth(`${y}-${pad(m)}`, d); // recorta el día al último del mes
+const finDeMes = (f) => monthEnd(ymOf(f));
 const capNombre = (t) => t.split(' ').filter(Boolean).map((w) => (/^(de|del|la|las|los|y)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1))).join(' ');
 
 /* ───────────── Fechas con su posición en la frase ───────────── */
 
 /** Todas las fechas dichas, en orden. `futuro`: si no se dice el año, la más cercana hacia delante. */
 export function fechas(t, hoy, futuro = true) {
-  const [ay, am, ad] = hoy.split('-').map(Number);
+  const [ay, am] = hoy.split('-').map(Number);
   const out = [];
   const anio = (m, d, dicho) => {
     if (dicho) return Number(dicho);
     const f = iso(ay, m, d);
-    if (futuro) return f < sumarDias(hoy, -60) ? ay + 1 : ay;
-    return f > sumarDias(hoy, 31) ? ay - 1 : ay;
+    if (futuro) return f < addDays(hoy, -60) ? ay + 1 : ay;
+    return f > addDays(hoy, 31) ? ay - 1 : ay;
   };
   const usado = [];
   const libre = (i, j) => !usado.some(([a, b]) => i < b && j > a);
@@ -46,9 +41,8 @@ export function fechas(t, hoy, futuro = true) {
   while ((x = reFinal.exec(t))) { const m = numMes(x[1]); const y = anio(m, 28, x[2]); poner(x.index, x.index + x[0].length, iso(y, m, 31)); }
   const reMes = new RegExp(`\\b(?:(?:a\\s+)?principios?\\s+de\\s+|(?:el\\s+)?mes\\s+de\\s+)?${RE_MES}(?:\\s+(?:de|del)\\s+(\\d{4}))?`, 'g');
   while ((x = reMes.exec(t))) { const m = numMes(x[1]); poner(x.index, x.index + x[0].length, iso(anio(m, 15, x[2]), m, 1), { soloMes: true }); }
-  const simples = [[/\bpasado manana\b/g, sumarDias(hoy, 2)], [/\bmanana\b/g, sumarDias(hoy, 1)], [/\bhoy\b/g, hoy], [/\bayer\b/g, sumarDias(hoy, -1)], [/\b(?:a\s+)?(?:final|fin)\s+de\s+(?:este\s+)?mes\b/g, iso(ay, am, 31)], [/\b(?:el\s+)?mes que viene\b|\bproximo mes\b/g, iso(am === 12 ? ay + 1 : ay, am === 12 ? 1 : am + 1, 1)]];
+  const simples = [[/\bpasado manana\b/g, addDays(hoy, 2)], [/\bmanana\b/g, addDays(hoy, 1)], [/\bhoy\b/g, hoy], [/\bayer\b/g, addDays(hoy, -1)], [/\b(?:a\s+)?(?:final|fin)\s+de\s+(?:este\s+)?mes\b/g, monthEnd(ymOf(hoy))], [/\b(?:el\s+)?mes que viene\b|\bproximo mes\b/g, monthStart(addMonths(ymOf(hoy), 1))]];
   for (const [re, f] of simples) while ((x = re.exec(t))) poner(x.index, x.index + x[0].length, f);
-  void ad;
   return out.sort((a, b) => a.i - b.i);
 }
 
@@ -116,7 +110,7 @@ function nombrePersona(original, t) {
   const nom = [];
   while (ws.length && /^(a|al|la|el|de|inquilin[oa]|nuev[oa]|huesped|senor|senora|don|dona|una|un)$/.test(ws[0])) ws.shift();
   for (const w of ws) {
-    if (CORTE.has(w) || /\d/.test(w) || (nom.length && /^(de|del)$/.test(w) && false)) break;
+    if (CORTE.has(w) || /\d/.test(w)) break;
     if (/^(de|del)$/.test(w)) { if (!nom.length) continue; nom.push(w); continue; }
     nom.push(w);
     if (nom.length >= 5) break;
@@ -134,31 +128,33 @@ function nombrePersona(original, t) {
 /* ───────────── Contrato al que se refiere la frase ───────────── */
 
 function contratoDe(t, s, hoy) {
-  const vivos = (s.contratos || []).filter((k) => !k.finalizado && (!k.fin || k.fin >= hoy || k.fin >= sumarDias(hoy, -40)));
-  const k = buscarInquilino(t, s);
+  const k = buscarInquilino(t, s, hoy);
   if (k) return k;
   const piso = buscarPiso(t, s);
   if (!piso) return null;
   const u = buscarUnidad(t, s, piso.id);
-  const cands = vivos.filter((c) => c.pisoId === piso.id && (!u || c.unidadId === u.id) && c.inicio <= sumarDias(hoy, 60));
+  const cands = (s.contratos || []).filter((c) => vigente(s, c, hoy) && c.pisoId === piso.id && (!u || c.unidadId === u.id) && c.inicio <= addDays(hoy, 60));
   return cands.length === 1 ? cands[0] : null;
 }
 
 
 /** Datos del reparto de suministros dichos en una frase: periodo, facturas, tope y días de cada inquilino. */
 export function camposReparto(original, s, hoy, pisoId) {
-  const t = cifras(norm(original).replace(/\bpor ciento\b/g, '%'));
+  const t = preparar(original);
   const campos = {};
   const fs = fechas(t, hoy, false);
-  if (fs.length >= 2) { campos.inicio = fs[0].fecha; campos.fin = fs[1].soloMes ? sumarDias(sumarMeses(fs[1].fecha, 1), -1) : fs[1].fecha; }
-  else if (fs.length === 1) { campos.inicio = fs[0].fecha; if (fs[0].soloMes) campos.fin = sumarDias(sumarMeses(fs[0].fecha, 1), -1); }
-  const tipos = [['luz', /\b(luz|electricidad|endesa|iberdrola)\b/], ['agua', /\b(agua|emasesa)\b/], ['gas', /\b(gas|naturgy)\b/], ['internet', /\b(internet|fibra|wifi)\b/], ['limpieza', /\b(limpieza)\b/]];
-  const dichos = tipos.filter(([, re]) => re.test(t));
+  if (fs.length >= 2) { campos.inicio = fs[0].fecha; campos.fin = fs[1].soloMes ? finDeMes(fs[1].fecha) : fs[1].fecha; }
+  else if (fs.length === 1) { campos.inicio = fs[0].fecha; if (fs[0].soloMes) campos.fin = finDeMes(fs[0].fecha); }
+  const dichos = SUMINISTROS.map(([k, , re]) => [k, re]).filter(([, re]) => re.test(t));
   for (const [k, re] of dichos) {
     const delante = t.match(new RegExp(`(\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:,(\\d{1,2}))?\\s*(?:euros?\\s+)?(?:de|del|en)\\s+(?:la\\s+|el\\s+)?(?:factura\\s+de\\s+(?:la\\s+|el\\s+)?)?${re.source}`));
     if (delante) campos[`f_${k}`] = Number(delante[1].replace(/\./g, '')) + (delante[2] ? Number(delante[2].padEnd(2, '0')) / 100 : 0);
   }
-  for (const [k, re] of dichos) { if (campos[`f_${k}`] != null) continue; const v = numeroCerca(t, re, { antes: dichos.length === 1 }); if (v != null && v > 31) campos[`f_${k}`] = v; else if (v != null && !/ de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/.test(t.slice(t.search(re), t.search(re) + 30))) campos[`f_${k}`] = v; }
+  for (const [k, re] of dichos) {
+    if (campos[`f_${k}`] != null) continue;
+    const v = numeroCerca(t, re, { antes: dichos.length === 1 });
+    if (v != null) campos[`f_${k}`] = v;
+  }
   if (dichos.length === 1 && campos[`f_${dichos[0][0]}`] == null) { const v = importe(t); if (v != null) campos[`f_${dichos[0][0]}`] = v; }
   const tope = numeroCerca(t, /\b(tope|incluido|incluidos|maximo|limite)\b/, { antes: false });
   if (tope != null) campos.tope = tope;
@@ -192,7 +188,7 @@ const SECCIONES = [
  * { tipo: 'ir', ruta, texto } · { tipo: 'form', form, id?, pisoId?, unidadId?, campos, resumen, faltan, aviso? }.
  */
 export function ordenar(original, s, hoy) {
-  const t = cifras(norm(original).replace(/\bpor ciento\b/g, '%'));
+  const t = preparar(original);
   const piso = buscarPiso(t, s);
 
   // Ir a una pantalla
@@ -226,10 +222,10 @@ export function ordenar(original, s, hoy) {
     const finF = fechaTras(t, fs, /\b(hasta|termina|terminando|finaliza|fin|acaba|sale)\b/);
     const dur = t.match(/\b(?:por|durante|de)\s+(\d+|un|una|medio)\s+(anos?|meses?)\b/);
     const desde = campos.inicio || hoy;
-    if (finF) campos.fin = finF.soloMes ? sumarDias(sumarMeses(finF.fecha, 1), -1) : finF.fecha;
+    if (finF) campos.fin = finF.soloMes ? finDeMes(finF.fecha) : finF.fecha;
     else if (dur) {
       const n = dur[1] === 'medio' ? 6 : (dur[1] === 'un' || dur[1] === 'una' ? 1 : Number(dur[1])) * (/^ano/.test(dur[2]) ? 12 : 1);
-      campos.fin = sumarDias(sumarMeses(desde, n), -1);
+      campos.fin = addDays(addMonthsISO(desde, n), -1);
     }
     const faltan = [];
     if (!pisoId) faltan.push('el piso');
@@ -241,6 +237,7 @@ export function ordenar(original, s, hoy) {
       const ocupada = (s.contratos || []).find((k) => k.unidadId === u.id && !k.finalizado && (!k.fin || k.fin >= (campos.inicio || hoy)));
       if (ocupada) return { tipo: 'form', form: 'contrato', pisoId, unidadId: u.id, campos, faltan, resumen: 'Nuevo contrato', aviso: `Ojo: ${u.nombre} está ocupada por ${ocupada.inquilino}${ocupada.fin ? ` hasta el ${ocupada.fin.split('-').reverse().join('/')}` : ''}. Finaliza antes ese contrato o cambia la habitación.` };
     }
+    if (!pisoId) return { tipo: 'nada', resumen: '¿En qué piso? Di el piso (y la habitación, si se alquila por habitaciones).' };
     return { tipo: 'form', form: 'contrato', pisoId, unidadId: u?.id || null, campos, faltan, resumen: 'Nuevo contrato' };
   }
 
@@ -248,20 +245,20 @@ export function ordenar(original, s, hoy) {
   if (/\b(finaliza|finalizar|finalizo|termina|terminar|termino|da de baja|dar de baja|baja de|se va|se marcha|se fue|se ha ido|se ha marchado|deja la habitacion|deja el piso|dejo la habitacion|dejo el piso|sale del piso|rescinde|rescindir|acaba el contrato|fin del contrato|fin de contrato|ha terminado|abandona)\b/.test(t)
       && !/\b(cambia|cambiar|corrige|modifica|pon|ponle)\b/.test(t) && !/\b(hipoteca|renta|cuota|mensualidad|prestamo)\b/.test(t)) {
     const k = contratoDe(t, s, hoy);
-    if (!k) return { tipo: 'form', form: 'finalizar', id: null, campos: {}, faltan: ['de quién es el contrato'], resumen: 'Finalizar contrato' };
+    if (!k) return { tipo: 'nada', resumen: '¿De quién es el contrato? Di el nombre del inquilino, o el piso y la habitación.' };
     const fs = fechas(t, hoy, true);
     const f = fs[fs.length - 1];
     const campos = {};
-    if (f) campos.fin = f.soloMes ? sumarDias(sumarMeses(f.fecha, 1), -1) : f.fecha;
+    if (f) campos.fin = f.soloMes ? finDeMes(f.fecha) : f.fecha;
     return { tipo: 'form', form: 'finalizar', id: k.id, campos, faltan: [], resumen: `Finalizar el contrato de ${k.inquilino}` };
   }
 
   // Renovar
   if (/\b(renueva|renovar|renovamos|renovacion|prorroga|prorrogar|prorrogamos|ampliar el contrato|amplia el contrato)\b/.test(t)) {
     const k = contratoDe(t, s, hoy);
-    if (!k) return { tipo: 'form', form: 'renovar', id: null, campos: {}, faltan: ['de quién es el contrato'], resumen: 'Renovar contrato' };
+    if (!k) return { tipo: 'nada', resumen: '¿De quién es el contrato? Di el nombre del inquilino, o el piso y la habitación.' };
     const campos = {};
-    const pct = t.match(/(-?\d+(?:[.,]\d+)?)\s*(?:%|por ciento)/);
+    const pct = t.match(/(-?\d+(?:[.,]\d+)?)\s*%/);
     if (pct) campos.pct = pct[1].replace('.', ',');
     else if (/\b(misma renta|sin subir|igual)\b/.test(t)) campos.pct = '0';
     return { tipo: 'form', form: 'renovar', id: k.id, campos, faltan: [], resumen: `Renovar el contrato de ${k.inquilino}` };
@@ -275,7 +272,7 @@ export function ordenar(original, s, hoy) {
       const fs = fechas(t, hoy, true);
       const f = fechaTras(t, fs, /\b(desde|a partir de|empezando|en)\b/) || fs[0];
       if (f) campos.desde = f.fecha.slice(0, 7);
-      const pct = t.match(/(-?\d+(?:[.,]\d+)?)\s*(?:%|por ciento)/);
+      const pct = t.match(/(-?\d+(?:[.,]\d+)?)\s*%/);
       if (pct) campos.pct = pct[1].replace('.', ',');
       else {
         const n = numeroCerca(t, /\b(renta|alquiler|mensualidad|a|en|paga|pagar|pagara)\b/, { antes: false });
@@ -295,7 +292,7 @@ export function ordenar(original, s, hoy) {
     if (fs[0]) campos.entrada = fs[0].fecha;
     if (fs[1]) campos.salida = fs[1].fecha;
     const noches = t.match(/\b(\d+)\s+noches?\b/);
-    if (!fs[1] && fs[0] && noches) campos.salida = sumarDias(fs[0].fecha, Number(noches[1]));
+    if (!fs[1] && fs[0] && noches) campos.salida = addDays(fs[0].fecha, Number(noches[1]));
     const imp = numeroCerca(t, /\b(importe|precio|total|por|paga|pagan|cobro|cobra)\b/, { antes: true }) ?? importe(t);
     if (imp != null) campos.importe = imp;
     const com = numeroCerca(t, /\bcomision\b/);
@@ -308,6 +305,7 @@ export function ordenar(original, s, hoy) {
     const faltan = [];
     if (!campos.entrada) faltan.push('las fechas');
     if (campos.importe == null) faltan.push('el importe');
+    if (piso && piso.modalidad !== 'turistico') return { tipo: 'nada', resumen: 'Ese piso no es turístico: las reservas son para pisos de alquiler turístico.' };
     return { tipo: 'form', form: 'reserva', pisoId: piso?.id || null, campos, faltan, resumen: 'Nueva reserva' };
   }
 
@@ -357,7 +355,8 @@ export function ordenar(original, s, hoy) {
     const fs = fechas(t, hoy, false);
     const mes = fs.find((f) => f.soloMes || f.fecha)?.fecha.slice(0, 7);
     let cands = (s.gastos || []).filter((g) => (!piso || g.pisoId === piso.id) && (!tm || g.categoria === tm.categoria) && (!mes || g.fecha.slice(0, 7) === mes || g.periodo === mes));
-    if (tm && tm.categoria === 'suministros') { const w = norm(tm.concepto).split(' ')[0]; const alias = { luz: /luz|electric|endesa|iberdrola/, agua: /agua|emasesa/, gas: /gas|naturgy/, internet: /internet|fibra|wifi|digi|movistar|vodafone|orange/ }[w]; if (alias) cands = cands.filter((g) => alias.test(norm(`${g.concepto} ${g.proveedor || ''}`))); }
+    const sum = tm?.categoria === 'suministros' && SUMINISTROS.find(([, nombre]) => nombre === tm.concepto.split(' ')[0]);
+    if (sum) cands = cands.filter((g) => sum[2].test(norm(`${g.concepto} ${g.proveedor || ''}`)));
     cands.sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
     const borrar = /\b(borra|borrar|elimina|eliminar|quita|quitar)\b/.test(t);
     const campos = {};

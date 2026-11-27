@@ -129,9 +129,7 @@ export function abrirDialogo({ titulo, cuerpo, submit, textoOk = 'Guardar', peli
     }
     const datos = leerForm(form);
     if (datos._incompletos) {
-      let el = form.querySelector('.form-error');
-      if (!el) { el = document.createElement('p'); el.className = 'form-error'; el.setAttribute('role', 'alert'); form.querySelector('.dlg-body').prepend(el); }
-      el.textContent = 'Completa el mes y el año (o deja ambos vacíos).';
+      errorForm(form, 'Completa el mes y el año (o deja ambos vacíos).');
       return;
     }
     const r = onSubmit ? onSubmit(datos, form) : true;
@@ -142,6 +140,54 @@ export function abrirDialogo({ titulo, cuerpo, submit, textoOk = 'Guardar', peli
   const primero = form.querySelector('.dlg-body input:not([type=hidden]):not([readonly]), .dlg-body select, .dlg-body textarea');
   if (primero && !matchMedia('(pointer: coarse)').matches) primero.focus();
   return form;
+}
+
+/** Muestra un error arriba del formulario abierto. Devuelve false para que el diálogo siga abierto. */
+export function errorForm(form, msg) {
+  let el = form.querySelector('.form-error');
+  if (!el) {
+    el = document.createElement('p');
+    el.className = 'form-error';
+    el.setAttribute('role', 'alert');
+    form.querySelector('.dlg-body').prepend(el);
+  }
+  el.textContent = msg;
+  el.scrollIntoView({ block: 'nearest' });
+  return false;
+}
+
+/**
+ * Pone valores en los campos de un formulario por su nombre (los mismos que lee `leerForm`: los
+ * selectores de mes son `nombre__m` y `nombre__y`) y los marca en color. Devuelve cuántos ha puesto.
+ */
+export function rellenar(form, campos, { eventos = true } = {}) {
+  let n = 0;
+  const marcar = (el) => {
+    if (eventos) { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
+    el.closest('.field, .check')?.classList.add('voz-marcado');
+    n++;
+  };
+  for (const [k, v] of Object.entries(campos)) {
+    if (v == null || v === '') continue;
+    const m = form.elements[`${k}__m`];
+    if (m) {
+      const [yy, mm] = String(v).split('-');
+      const y = form.elements[`${k}__y`];
+      if (![...y.options].some((x) => x.value === yy)) y.add(new Option(yy, yy));
+      m.value = mm;
+      y.value = yy;
+      marcar(m);
+      continue;
+    }
+    const el = form.elements[k];
+    if (!el || el.readOnly) continue;
+    if (el.type === 'checkbox') el.checked = !!v;
+    else if (el.tagName === 'SELECT') { if (![...el.options].some((x) => x.value === String(v))) continue; el.value = String(v); }
+    else if (typeof v === 'number' && el.type !== 'number') el.value = Number.isInteger(v) ? String(v) : v.toFixed(2).replace('.', ',');
+    else el.value = String(v);
+    marcar(el);
+  }
+  return n;
 }
 
 /** Cambia lo que se hace al cerrar el diálogo abierto (también con Esc o Cancelar). */
@@ -259,6 +305,7 @@ export function chk(name, checked, texto) {
 
 const I = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 export const ICON = {
+  micro: I('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'),
   panel: I('<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
   cobros: I('<rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M2.5 10h19"/><path d="M6.5 15h4"/>'),
   gastos: I('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>'),

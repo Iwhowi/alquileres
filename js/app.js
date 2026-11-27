@@ -19,10 +19,8 @@ import { accionesSync, guardarServidor, recibirDeOtroMovil } from './sync-ui.js'
 import { guardarArchivo, leerBlob, obtenerBlob, ponerBlob, crearZip, leerZip, extension, urlDe } from './docs.js';
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
-import { abrirVoz, MICRO } from './voz.js';
-import { abrirReparto } from './reparto.js';
 
-app.version = '2.16.0';
+app.version = '2.17.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -148,7 +146,7 @@ function ponerMicro(ver) {
     b = document.createElement('button');
     b.id = 'micro'; b.type = 'button'; b.className = 'micro-fab'; b.dataset.action = 'voz';
     b.setAttribute('aria-label', 'Hablar con la app'); b.title = 'Hablar con la app';
-    b.innerHTML = MICRO;
+    b.innerHTML = ICON.micro;
     document.body.append(b);
   }
   b.hidden = !ver;
@@ -204,8 +202,9 @@ function renderBienvenida() {
 /* ───────────── Acciones ───────────── */
 
 const acciones = {
-  reparto: (el) => abrirReparto(el.dataset.piso),
-  voz: () => abrirVoz(),
+  // Voz y reparto se cargan al usarlos por primera vez (no retrasan el arranque)
+  reparto: async (el) => (await import('./reparto.js')).abrirReparto(el.dataset.piso),
+  voz: async () => (await import('./voz.js')).abrirVoz(),
   empezar: () => { app.s = estructuraInicial(); commit('Cartera creada. Empieza por los datos de cada piso.'); location.hash = '#/pisos'; },
   'cargar-demo': async () => {
     if (app.s && !app.s.ajustes.demo && !(await confirmar('Cargar datos de ejemplo', 'Se sustituirán tus datos actuales por datos ficticios. Exporta antes una copia si quieres conservarlos.', { ok: 'Cargar ejemplo' }))) return;
