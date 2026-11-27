@@ -6,6 +6,7 @@ import { app } from './state.js';
 import { interpretar } from './voz-interpretar.js';
 import { ordenar } from './voz-ordenes.js';
 import * as F from './forms.js';
+import { abrirReparto } from './reparto.js';
 
 const Reconocimiento = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
 export const MICRO = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>';
@@ -16,7 +17,7 @@ const nombrePiso = (id) => app.s.pisos.find((p) => p.id === id)?.nombre || '';
 const EJEMPLOS = [
   ['Gastos', ['Gasto de luz de noviembre en Ramón y Cajal de 120 euros', 'He pagado 80 euros al fontanero en Juan de Ledesma', 'Comunidad de Sigüenza 60 euros todos los meses', 'Corrige el gasto de luz de noviembre de Sigüenza, son 125 euros']],
   ['Cobros', ['Miguel ha pagado el alquiler de noviembre', 'Marca cobrado noviembre de Sigüenza']],
-  ['Inquilinos y contratos', ['Nuevo inquilino Pedro García en la habitación 2 de Juan de Ledesma desde el 1 de diciembre, 400 euros, fianza 400, por un año', 'Miguel se va el 30 de junio', 'Renueva el contrato de Claudia con un 3 %', 'Sube la renta de Claudia a 420 desde enero', 'Cambia el teléfono de Claudia a 654 321 987', 'Ponle a Miguel una nota que diga paga por Bizum']],
+  ['Inquilinos y contratos', ['Nuevo inquilino Pedro García en la habitación 2 de Juan de Ledesma desde el 1 de diciembre, 400 euros, fianza 400, por un año', 'Miguel se va el 30 de junio', 'Renueva el contrato de Claudia con un 3 %', 'Sube la renta de Claudia a 420 desde enero', 'Cambia el teléfono de Claudia a 654 321 987', 'Ponle a Miguel una nota que diga paga por Bizum', 'Reparte la luz de Juan de Ledesma, 120 euros, del 31 de octubre al 29 de noviembre']],
   ['Pisos, reservas e hipotecas', ['Reserva en Hornos de Juan Pérez del 5 al 8 de diciembre por 300 euros por Airbnb', 'El valor de mercado de Ramón y Cajal es 210.000 euros', 'La cuota de la hipoteca de Sigüenza es de 650 euros', 'Abre Juan de Ledesma', 'Llévame a cobros']],
 ];
 
@@ -145,6 +146,7 @@ const ABRIR = {
   unidad: (o) => F.formUnidad(null, o.pisoId),
   piso: (o) => F.formPiso(o.id),
   titular: (o) => F.formTitular(o.id),
+  reparto: (o) => abrirReparto(o.pisoId),
 };
 
 function ejecutar(o, frase, aviso) {
@@ -172,7 +174,7 @@ function ejecutar(o, frase, aviso) {
 }
 
 /** Pone los valores en los campos del formulario abierto y los marca. Devuelve cuántos ha puesto. */
-function rellenar(form, campos) {
+export function rellenar(form, campos) {
   let n = 0;
   const avisar = (el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); el.closest('.field, .check')?.classList.add('voz-marcado'); n++; };
   for (const [k, v] of Object.entries(campos)) {
@@ -206,4 +208,27 @@ function elegirCobro(cands, frase) {
       <div class="voz-lista">${cands.map((c) => html`<button type="button" class="btn voz-opcion" data-voz-cobro="${c.id}"><span><strong>${nombre(c)}</strong> · ${c.concepto}</span><b>${fmtEUR(c.importe - (Number(c.cobrado) || 0))}</b></button>`)}</div>`,
   });
   document.querySelectorAll('[data-voz-cobro]').forEach((b) => b.addEventListener('click', () => F.cobrar('cobro', b.dataset.vozCobro)));
+}
+
+/**
+ * Micro dentro de un formulario: escucha una frase y llama a `alFinal(texto)`. Si el navegador no
+ * tiene reconocimiento de voz, pide el texto (se puede dictar con el micro del teclado).
+ */
+export function dictarEn(boton, alFinal, alAviso = (t) => toast(t, { tipo: 'warn', ms: 6000 })) {
+  if (!Reconocimiento) {
+    const t = prompt('Dicta o escribe los datos (puedes usar el micrófono del teclado):');
+    if (t?.trim()) alFinal(t.trim());
+    return;
+  }
+  if (boton.classList.contains('on')) { boton._rec?.stop(); return; }
+  const rec = new Reconocimiento();
+  rec.lang = 'es-ES'; rec.interimResults = false; rec.continuous = false; rec.maxAlternatives = 1;
+  let texto = '';
+  rec.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) texto += `${e.results[i][0].transcript} `; };
+  rec.onerror = (e) => {
+    const m = { 'not-allowed': 'No hay permiso para el micrófono. Actívalo en los ajustes del navegador para esta web.', 'no-speech': 'No te he oído. Toca el micro y vuelve a intentarlo.', network: 'El reconocimiento de voz necesita conexión a internet.' }[e.error];
+    if (m) alAviso(m);
+  };
+  rec.onend = () => { boton.classList.remove('on'); boton._rec = null; if (texto.trim()) alFinal(texto.trim()); };
+  try { rec.start(); boton._rec = rec; boton.classList.add('on'); } catch { alAviso('No se ha podido usar el micrófono.'); }
 }

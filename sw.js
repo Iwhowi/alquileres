@@ -1,9 +1,9 @@
 // Service worker: la app funciona sin conexión (caché de la carcasa, red primero para actualizarse).
-const CACHE = 'alquileres-v2.15.0';
+const CACHE = 'alquileres-v2.16.0';
 const ARCHIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/calc.js', 'js/store.js', 'js/state.js', 'js/ui.js', 'js/forms.js', 'js/csv.js', 'js/demo.js',
-  'js/views/panel.js', 'js/views/cobros.js', 'js/views/pisos.js', 'js/views/gastos.js', 'js/views/calendario.js', 'js/views/fiscal.js', 'js/views/ajustes.js', 'js/building.js', 'js/motion.js', 'js/docs.js', 'js/adjuntos.js', 'js/xlsx.js', 'js/excel.js', 'js/importar-libre.js', 'js/sync.js', 'js/sync-ui.js', 'js/voz.js', 'js/voz-interpretar.js', 'js/voz-ordenes.js', 'js/vendor/xlsx.core.min.js', 'js/vendor/pdfjs/pdf.min.mjs', 'js/vendor/pdfjs/pdf.worker.min.mjs', 'css/escena.css',
+  'js/views/panel.js', 'js/views/cobros.js', 'js/views/pisos.js', 'js/views/gastos.js', 'js/views/calendario.js', 'js/views/fiscal.js', 'js/views/ajustes.js', 'js/building.js', 'js/motion.js', 'js/docs.js', 'js/adjuntos.js', 'js/xlsx.js', 'js/excel.js', 'js/importar-libre.js', 'js/sync.js', 'js/sync-ui.js', 'js/voz.js', 'js/voz-interpretar.js', 'js/voz-ordenes.js', 'js/reparto.js', 'js/vendor/xlsx.core.min.js', 'js/vendor/pdfjs/pdf.min.mjs', 'js/vendor/pdfjs/pdf.worker.min.mjs', 'css/escena.css',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 

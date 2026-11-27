@@ -20,8 +20,9 @@ import { guardarArchivo, leerBlob, obtenerBlob, ponerBlob, crearZip, leerZip, ex
 import { iniciarEscena, irAPlanta, plantaDe, asomar, SECCIONES, numeroSeccion, definirPisos, nombrarPisos } from './building.js';
 import { entrar, pildoras, indicadorNav } from './motion.js';
 import { abrirVoz, MICRO } from './voz.js';
+import { abrirReparto } from './reparto.js';
 
-app.version = '2.15.0';
+app.version = '2.16.0';
 
 const NAV = [
   ['', 'Panel', 'panel'],
@@ -203,6 +204,7 @@ function renderBienvenida() {
 /* ───────────── Acciones ───────────── */
 
 const acciones = {
+  reparto: (el) => abrirReparto(el.dataset.piso),
   voz: () => abrirVoz(),
   empezar: () => { app.s = estructuraInicial(); commit('Cartera creada. Empieza por los datos de cada piso.'); location.hash = '#/pisos'; },
   'cargar-demo': async () => {

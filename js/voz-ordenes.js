@@ -39,7 +39,7 @@ export function fechas(t, hoy, futuro = true) {
     out.push({ i: x.index + 1, fecha: iso(y, m, Number(x[2])) });
   }
   const reDia = new RegExp(`\\b(?:el\\s+)?(?:dia\\s+)?(\\d{1,2})\\s+de\\s+${RE_MES}(?:\\s+(?:de|del)\\s+(\\d{4}))?`, 'g');
-  while ((x = reDia.exec(t))) { const m = numMes(x[2]); poner(x.index, x.index + x[0].length, iso(anio(m, Number(x[1]), x[3]), m, Number(x[1]))); }
+  while ((x = reDia.exec(t))) { if (/[,.]\d*$/.test(t.slice(0, x.index + x[0].indexOf(x[1])))) continue; const m = numMes(x[2]); poner(x.index, x.index + x[0].length, iso(anio(m, Number(x[1]), x[3]), m, Number(x[1]))); }
   const reNum = /\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/g;
   while ((x = reNum.exec(t))) poner(x.index, x.index + x[0].length, iso(Number(x[3].length === 2 ? `20${x[3]}` : x[3]), Number(x[2]), Number(x[1])));
   const reFinal = new RegExp(`\\b(?:a\\s+)?(?:final(?:es)?|fin)\\s+de\\s+${RE_MES}(?:\\s+(?:de|del)\\s+(\\d{4}))?`, 'g');
@@ -70,7 +70,8 @@ function numeroCerca(t, re, { antes = true } = {}) {
   let x;
   while ((x = r.exec(t))) {
     const tras = t.slice(x.index + x[0].length, x.index + x[0].length + 60);
-    let m = tras.match(/^\s*(?:[a-zñ]+\s+){0,7}?(\d{1,3}(?:\.\d{3})+|\d+)(?:[,.](\d{1,2}))?(?!\d)(?!\s*(?:de\s+)?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|dias|meses|anos|personas|noches)\b)/);
+    let m = tras.match(/^\s*(?:[a-zñ]+\s+){0,7}?(?:(\d{1,3}(?:\.\d{3})+|\d+)[,](\d{1,2})(?!\d)|(\d{1,3}(?:\.\d{3})+|\d+)(?!\d|,\d)(?!\s*(?:de\s+)?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|dias|meses|anos|personas|noches)\b))/);
+    if (m && m[3]) m = [m[0], m[3], undefined];
     if (m) return Number(m[1].replace(/\./g, '')) + (m[2] ? Number(m[2].padEnd(2, '0')) / 100 : 0);
     if (antes) {
       const prev = t.slice(Math.max(0, x.index - 26), x.index);
@@ -143,6 +144,33 @@ function contratoDe(t, s, hoy) {
   return cands.length === 1 ? cands[0] : null;
 }
 
+
+/** Datos del reparto de suministros dichos en una frase: periodo, facturas, tope y días de cada inquilino. */
+export function camposReparto(original, s, hoy, pisoId) {
+  const t = cifras(norm(original).replace(/\bpor ciento\b/g, '%'));
+  const campos = {};
+  const fs = fechas(t, hoy, false);
+  if (fs.length >= 2) { campos.inicio = fs[0].fecha; campos.fin = fs[1].soloMes ? sumarDias(sumarMeses(fs[1].fecha, 1), -1) : fs[1].fecha; }
+  else if (fs.length === 1) { campos.inicio = fs[0].fecha; if (fs[0].soloMes) campos.fin = sumarDias(sumarMeses(fs[0].fecha, 1), -1); }
+  const tipos = [['luz', /\b(luz|electricidad|endesa|iberdrola)\b/], ['agua', /\b(agua|emasesa)\b/], ['gas', /\b(gas|naturgy)\b/], ['internet', /\b(internet|fibra|wifi)\b/], ['limpieza', /\b(limpieza)\b/]];
+  const dichos = tipos.filter(([, re]) => re.test(t));
+  for (const [k, re] of dichos) { const v = numeroCerca(t, re, { antes: dichos.length === 1 }); if (v != null && v > 31) campos[`f_${k}`] = v; else if (v != null && !/ de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/.test(t.slice(t.search(re), t.search(re) + 30))) campos[`f_${k}`] = v; }
+  if (dichos.length === 1 && campos[`f_${dichos[0][0]}`] == null) { const v = importe(t); if (v != null) campos[`f_${dichos[0][0]}`] = v; }
+  const tope = numeroCerca(t, /\b(tope|incluido|incluidos|maximo|limite)\b/, { antes: false });
+  if (tope != null) campos.tope = tope;
+  // «Miguel 20 días», «Claudia estuvo 25 días»
+  for (const k of (s.contratos || []).filter((c) => s.unidades.some((u) => u.id === c.unidadId && u.pisoId === pisoId))) {
+    const ps = palabras(k.inquilino).filter((p) => p.length >= 3);
+    const ws = t.split(' ');
+    for (let i = 0; i < ws.length; i++) {
+      if (!ps.some((p) => parecida(ws[i], p))) continue;
+      const tras = ws.slice(i + 1, i + 6).join(' ').match(/^(?:[a-z]+\s+){0,3}?(\d{1,3})\s+dias\b/);
+      if (tras) campos[`dias_${k.id}`] = Number(tras[1]);
+    }
+  }
+  return campos;
+}
+
 /* ───────────── Órdenes ───────────── */
 
 const SECCIONES = [
@@ -182,7 +210,7 @@ export function ordenar(original, s, hoy) {
     const doc = documento(t); if (doc) campos.dni = doc;
     let renta = numeroCerca(t, /\b(renta|alquiler|mensualidad|precio|paga|pagara|pagando|cuota)\b/);
     const fianza = numeroCerca(t, /\b(fianza|deposito)\b/);
-    if (renta == null) { const imp = importe(t.replace(/\b(fianza|deposito)\b[^0-9]*\d+(?:[.,]\d+)?/g, ' ').replace(/\b(telefono|movil)\b[\s\d]*/g, ' ')); if (imp != null) renta = imp; }
+    if (renta == null) { const imp = importe(t.replace(/\b(fianza|deposito)\b[^0-9]*\d+(?:[.,]\d+)?/g, ' ').replace(/\b(telefono|movil)\b[\s\d]*/g, ' ').replace(/\b(dni|nie|pasaporte|documento)\b\s*\S+(\s+[a-z]\b)?/g, ' ').replace(/\b[6789](\s*\d){8}\b/g, ' ')); if (imp != null) renta = imp; }
     if (renta != null) campos.renta = renta;
     if (fianza != null) campos.fianza = fianza;
     else if (/\bfianza de (un|una|1) mes\b/.test(t) && renta) campos.fianza = renta;
@@ -277,6 +305,13 @@ export function ordenar(original, s, hoy) {
     if (!campos.entrada) faltan.push('las fechas');
     if (campos.importe == null) faltan.push('el importe');
     return { tipo: 'form', form: 'reserva', pisoId: piso?.id || null, campos, faltan, resumen: 'Nueva reserva' };
+  }
+
+  // Repartir facturas de suministros entre los inquilinos
+  if (/\b(reparte|repartir|repartimos|reparto|divide|dividir|dividimos|prorratea|prorratear)\b/.test(t) && !/\brenta\b/.test(t)) {
+    if (!piso) return { tipo: 'nada', resumen: '¿De qué piso? Di, por ejemplo: «reparte la luz de Juan de Ledesma, 120 euros, de octubre».' };
+    const campos = camposReparto(original, s, hoy, piso.id);
+    return { tipo: 'form', form: 'reparto', pisoId: piso.id, campos, faltan: Object.keys(campos).some((k) => k.startsWith('f_')) ? [] : ['el importe de la factura'], resumen: `Repartir suministros de ${piso.nombre}` };
   }
 
   // Gasto fijo (se repite)

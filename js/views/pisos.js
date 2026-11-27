@@ -112,7 +112,7 @@ function bloqueUnidades(p) {
     <section class="card">
       <div class="card-head">
         <h2>${habit ? 'Habitaciones e inquilinos' : 'Inquilino y contrato'}</h2>
-        ${habit ? html`<button class="btn btn-sm" data-action="nueva-unidad" data-piso="${p.id}">${raw(ICON.plus)}<span>Habitación</span></button>` : ''}
+        ${habit ? html`<div class="card-actions"><button class="btn btn-sm" data-action="reparto" data-piso="${p.id}">Repartir suministros</button><button class="btn btn-sm" data-action="nueva-unidad" data-piso="${p.id}">${raw(ICON.plus)}<span>Habitación</span></button></div>` : ''}
       </div>
       <ul class="units">
         ${uds.map((u) => {
