@@ -658,3 +658,34 @@ body:has(dialog[open]) .micro-fab { visibility: hidden; }
 .voz-mini { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; display: grid; place-items: center; color: #fff; background: var(--accent); cursor: pointer; }
 .voz-mini svg { width: 22px; height: 22px; }
 .voz-mini.on { background: #d4483b; animation: voz-latido 1.2s ease-in-out infinite; }
+
+.reparto-dictar { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; margin-bottom: 14px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 14px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.reparto-dictar > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.reparto-dictar small { color: var(--muted); font-size: 13px; }
+.reparto-paso { display: flex; align-items: center; gap: 8px; margin: 16px 0 8px; font-weight: 650; }
+.reparto-paso b { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; }
+.reparto-meses { display: flex; flex-wrap: wrap; gap: 6px; }
+.reparto-meses .pill { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; font-size: 14px; cursor: pointer; }
+.reparto-meses .pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.reparto-fechas { margin-top: 10px; }
+.reparto-periodo { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.reparto-facturas { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+.reparto-mas { margin-top: 10px; }
+.reparto-mas summary { cursor: pointer; color: var(--accent); font-weight: 560; font-size: 14px; padding: 4px 0; }
+.reparto-lista { list-style: none; margin: 0; padding: 0; }
+.reparto-lista li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.reparto-quien, .reparto-cuanto { display: flex; flex-direction: column; gap: 3px; }
+.reparto-quien small, .reparto-cuanto small { color: var(--muted); font-size: 12.5px; }
+.reparto-cuanto { text-align: right; }
+.reparto-cuanto b { font-size: 17px; }
+.reparto-lista .reparto-dias { width: 48px; padding: 2px 4px; }
+.reparto-total { display: flex; justify-content: space-between; align-items: center; padding: 12px 0 4px; font-weight: 650; }
+.reparto-total b { font-size: 19px; color: var(--accent); }
+
+.reparto-fechas[hidden] { display: none !important; }
+.reparto-ticket { margin-top: 4px; align-self: flex-end; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--accent); background: none; color: var(--accent); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.reparto-todos { width: 100%; margin: 8px 0 4px; }
+.tickets { display: flex !important; flex-direction: column; align-items: center; gap: 18px; padding: 14px !important; }
+.ticket { margin: 0; width: min(100%, 420px); }
+.ticket img { width: 100%; height: auto; display: block; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.15); }
+.ticket figcaption { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }

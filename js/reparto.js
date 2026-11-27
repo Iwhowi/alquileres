@@ -59,7 +59,10 @@ export function repartir(facturas, ocupantes, tope = 0) {
 
 /** Fecha de cobro con la siguiente mensualidad del inquilino. */
 function siguienteVencimiento(k, fin) {
-  const ym = addMonths(ymOf(fin), 1);
+  const hoy = todayISO();
+  const base = addDays(fin, 1) > hoy ? addDays(fin, 1) : hoy;
+  let ym = ymOf(base);
+  if (dayInMonth(ym, k.diaPago || 5) < base) ym = addMonths(ym, 1);
   return dayInMonth(ym, k.diaPago || 5);
 }
 
@@ -80,23 +83,28 @@ export function abrirReparto(pisoId) {
     textoOk: 'Crear recibos',
     ancho: 'wide',
     cuerpo: html`
-      <div class="voz-en-form"><button type="button" class="voz-mini" data-reparto-micro aria-label="Dictar datos">${raw(MICRO)}</button><span class="muted small" data-reparto-oido>Toca el micro y di, p. ej.: «luz 96,40 y agua 38,20, del 1 al 31 de octubre; Miguel 20 días»</span></div>
-      <p class="muted">${p.nombre}. Cada factura se reparte entre las habitaciones ocupadas, en proporción a los días que ha estado cada inquilino en el periodo. Se crea un recibo para cobrarlo con la siguiente mensualidad.</p>
-      <div class="form-grid">
-        ${campo('Desde', inp('inicio', ini0, { type: 'date', req: true }), { ayuda: 'Primer día de la factura' })}
-        ${campo('Hasta', inp('fin', fin0, { type: 'date', req: true }), { ayuda: 'Último día de la factura' })}
+      <button type="button" class="reparto-dictar" data-reparto-micro><span class="voz-mini">${raw(MICRO)}</span><span><strong>Díctalo</strong><small data-reparto-oido>Por ejemplo: «luz 96,40 y agua 38,20 de octubre»</small></span></button>
+      <div class="reparto-paso"><b>1</b> ¿De qué fechas es la factura?</div>
+      <div class="reparto-meses">${[addMonths(ymOf(hoy), -2), ymPas, ymOf(hoy)].map((ym) => html`<button type="button" class="pill" data-mes="${ym}">${cap(mesLargo(ym))}</button>`)}<button type="button" class="pill" data-otras-fechas>Otras fechas</button></div>
+      <div class="form-grid reparto-fechas" data-fechas hidden>
+        ${campo('Desde', inp('inicio', ini0, { type: 'date', req: true }))}
+        ${campo('Hasta', inp('fin', fin0, { type: 'date', req: true }))}
       </div>
-      ${recientes.length ? html`<div class="reparto-chips"><span class="muted small">Gastos apuntados (toca para usarlos):</span>
-        ${recientes.map((g) => html`<button type="button" class="chip chip-soft" data-usar-gasto="${g.id}">${g.concepto || CAT[g.categoria]?.nombre} · ${fmtFecha(g.fecha, { corto: true })} · ${fmtEUR(g.importe)}</button>`)}</div>` : ''}
-      <h3 class="sub-h">Facturas del periodo</h3>
+      <p class="reparto-periodo" data-periodo></p>
+      <div class="reparto-paso"><b>2</b> ¿Cuánto es cada factura?</div>
       <div class="form-grid reparto-facturas">
-        ${FACTURAS.map(([k, nombre]) => campo(nombre, money(`f_${k}`, '')))}
+        ${FACTURAS.slice(0, 2).map(([k, nombre]) => campo(nombre, money(`f_${k}`, '')))}
       </div>
-      <div class="form-grid">
-        ${campo('Incluido en la renta (tope por inquilino)', money('tope', ''), { clase: 'span2', ayuda: 'Opcional. Si cada renta ya incluye, p. ej., 30 € de suministros, solo se cobra lo que pase de ahí. Vacío = se cobra todo.' })}
-      </div>
-      <h3 class="sub-h">Reparto</h3>
-      <div data-reparto-tabla></div>`,
+      ${recientes.length ? html`<div class="reparto-chips"><span class="muted small">O toca una ya apuntada:</span>
+        ${recientes.map((g) => html`<button type="button" class="chip chip-soft" data-usar-gasto="${g.id}">${g.concepto || CAT[g.categoria]?.nombre} · ${fmtEUR(g.importe)}</button>`)}</div>` : ''}
+      <details class="reparto-mas" data-otras><summary>Otra factura (gas, internet, limpieza…)</summary>
+        <div class="form-grid reparto-facturas">${FACTURAS.slice(2).map(([k, nombre]) => campo(nombre, money(`f_${k}`, '')))}</div>
+      </details>
+      <div class="reparto-paso"><b>3</b> Lo que paga cada uno</div>
+      <div data-reparto-tabla></div>
+      <details class="reparto-mas" data-opciones><summary>Más opciones</summary>
+        ${campo('Ya incluido en cada renta', money('tope', ''), { ayuda: 'Si la renta ya incluye, p. ej., 30 € de suministros, solo se cobra lo que pase de ahí.' })}
+      </details>`,
     submit: (d, f) => {
       const r = calcular();
       if (!r) return error(f, 'Indica el periodo y al menos una factura.');
@@ -131,25 +139,30 @@ export function abrirReparto(pisoId) {
   }
   function pintar() {
     const inicio = val('inicio'), fin = val('fin');
+    const fmtC = (f) => f.split('-').reverse().slice(0, 2).join('/');
+    const mesDe = inicio && fin && inicio.endsWith('-01') && fin === addDays(`${addMonths(ymOf(inicio), 1)}-01`, -1) ? ymOf(inicio) : null;
+    form.querySelectorAll('[data-mes]').forEach((b) => b.classList.toggle('on', b.dataset.mes === mesDe));
+    form.querySelector('[data-otras-fechas]').classList.toggle('on', !mesDe);
+    if (!mesDe) form.querySelector('[data-fechas]').hidden = false;
+    form.querySelector('[data-periodo]').textContent = inicio && fin && fin >= inicio ? `Del ${fmtC(inicio)} al ${fmtC(fin)} · ${diffDays(inicio, fin) + 1} días` : 'Elige las fechas de la factura.';
+    if (FACTURAS.slice(2).some(([k]) => n(val(`f_${k}`)) > 0)) form.querySelector('[data-otras]').open = true;
+    if (n(val('tope')) > 0) form.querySelector('[data-opciones]').open = true;
     const ocup = ocupantesDe(app.s, pisoId, inicio, fin);
     if (!ocup.length) { tabla.innerHTML = String(html`<p class="muted">No hay inquilinos con contrato en esas fechas.</p>`); return; }
     const r = calcular();
-    const usadas = FACTURAS.filter(([k]) => n(val(`f_${k}`)) > 0);
     const dias = (o) => form.elements[`dias_${o.k.id}`]?.value ?? o.dias;
     const fila = (o) => r?.filas.find((x) => x.k.id === o.k.id);
     const tope = n(val('tope'));
+    const usadas = FACTURAS.filter(([k]) => n(val(`f_${k}`)) > 0);
     tabla.innerHTML = String(html`
-      <div class="table-wrap"><table class="tabla reparto-tabla">
-        <thead><tr><th>Inquilino</th><th class="num">Días</th>${usadas.map(([, nom]) => html`<th class="num">${nom}</th>`)}<th class="num">Total</th>${tope ? html`<th class="num">A cobrar</th>` : ''}</tr></thead>
-        <tbody>${ocup.map((o) => { const f = fila(o); return html`<tr>
-          <td><strong>${o.k.inquilino}</strong><br><small class="muted">${o.unidad.nombre}</small></td>
-          <td class="num"><input class="reparto-dias" name="dias_${o.k.id}" type="number" min="0" max="366" inputmode="numeric" value="${dias(o)}" aria-label="Días de ${o.k.inquilino}"></td>
-          ${usadas.map(([k]) => html`<td class="num">${f ? fmtEUR(f.partes[k] || 0) : '—'}</td>`)}
-          <td class="num"><b>${f ? fmtEUR(f.total) : '—'}</b></td>
-          ${tope ? html`<td class="num"><b>${f ? fmtEUR(f.aCobrar) : '—'}</b></td>` : ''}</tr>`; })}</tbody>
-        ${r ? html`<tfoot><tr><td>Total</td><td class="num">${r.diasTotales}</td>${usadas.map(([k]) => html`<td class="num">${fmtEUR(r.facturas[k])}</td>`)}<td class="num"><b>${fmtEUR(r.filas.reduce((a, x) => a + x.total, 0))}</b></td>${tope ? html`<td class="num"><b>${fmtEUR(r.filas.reduce((a, x) => a + x.aCobrar, 0))}</b></td>` : ''}</tr></tfoot>` : ''}
-      </table></div>
-      <p class="muted small">Puedes cambiar los días si alguien no ha estado (p. ej. vacaciones pactadas). ${r ? `Coste por día y habitación: ${fmtEUR(Object.values(r.facturas).reduce((a, x) => a + x, 0) / r.diasTotales)}.` : 'Escribe el importe de alguna factura.'}</p>`);
+      <ul class="reparto-lista">${ocup.map((o) => { const f = fila(o); return html`
+        <li>
+          <div class="reparto-quien"><strong>${o.k.inquilino}</strong><small>${o.unidad.nombre} · <label><input class="reparto-dias" name="dias_${o.k.id}" type="number" min="0" max="366" inputmode="numeric" value="${dias(o)}" aria-label="Días de ${o.k.inquilino}"> días</label></small></div>
+          <div class="reparto-cuanto"><b>${f ? fmtEUR(tope ? f.aCobrar : f.total) : '—'}</b>${f && usadas.length > 1 ? html`<small>${usadas.map(([k, nom]) => `${nom} ${fmtEUR(f.partes[k] || 0)}`).join(' · ')}</small>` : ''}${f && tope ? html`<small>de ${fmtEUR(f.total)}, menos ${fmtEUR(tope)} incluidos</small>` : ''}${f ? html`<button type="button" class="reparto-ticket" data-ticket="${o.k.id}">Ticket</button>` : ''}</div>
+        </li>`; })}</ul>
+      ${r ? html`<div class="reparto-total"><span>Total a cobrar</span><b>${fmtEUR(r.filas.reduce((a, x) => a + x.aCobrar, 0))}</b></div>
+        <button type="button" class="btn reparto-todos" data-ticket="todos">Tickets para todos</button>` : html`<p class="muted small">Escribe el importe de la factura y verás lo que paga cada uno.</p>`}
+      <p class="muted small">Se reparte por los días que ha vivido cada uno. Si alguien no ha estado, cambia sus días.</p>`);
   }
   let pendiente = null;
   form.addEventListener('input', (e) => {
@@ -170,8 +183,19 @@ export function abrirReparto(pisoId) {
       pintar();
       return;
     }
+    const mesB = e.target.closest('[data-mes]');
+    if (mesB) { const ym = mesB.dataset.mes; form.elements.inicio.value = `${ym}-01`; form.elements.fin.value = addDays(`${addMonths(ym, 1)}-01`, -1); form.querySelector('[data-fechas]').hidden = true; tabla.querySelectorAll('.reparto-dias').forEach((x) => x.remove()); pintar(); return; }
+    if (e.target.closest('[data-otras-fechas]')) { form.querySelector('[data-fechas]').hidden = false; form.elements.inicio.focus(); return; }
+    const tk = e.target.closest('[data-ticket]');
+    if (tk) {
+      const r = calcular();
+      if (!r) return;
+      const filas = r.filas.filter((x) => tk.dataset.ticket === 'todos' || x.k.id === tk.dataset.ticket);
+      verTickets(filas.map((f) => datosTicket(p, r, f, n(val('tope')))));
+      return;
+    }
     if (e.target.closest('[data-reparto-compartir]')) compartir();
-    const mic = e.target.closest('[data-reparto-micro]');
+    const mic = e.target.closest('[data-reparto-micro]')?.querySelector('.voz-mini');
     if (mic) {
       const oido = form.querySelector('[data-reparto-oido]');
       oido.textContent = 'Te escucho…';
@@ -202,9 +226,10 @@ export function abrirReparto(pisoId) {
     else window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
   }
   pintar();
-  void telefonoWhatsApp;
 }
 
+const MESES_L = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const mesLargo = (ym) => MESES_L[Number(ym.slice(5, 7)) - 1];
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const lista = (xs) => (xs.length <= 1 ? xs[0] || 'suministros' : `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}`);
 function error(form, msg) {
@@ -214,3 +239,120 @@ function error(form, msg) {
   return false;
 }
 void raw;
+
+/* ───────────── Tickets: una imagen por inquilino con lo que tiene que pagar ───────────── */
+
+function datosTicket(p, r, f, tope) {
+  const t = app.s.titulares.find((x) => x.id === p.titularId);
+  const iban = (f.k.notas || '').match(/\bES\d{2}(?:\s?\d{4}){5}\b/)?.[0] || '';
+  const venc = siguienteVencimiento(f.k, r.fin);
+  return {
+    emisor: t ? `${t.nombre}${t.nif ? ` · ${t.nif}` : ''}` : '',
+    piso: p.direccion || p.nombre,
+    inquilino: f.k.inquilino,
+    habitacion: f.unidad.nombre,
+    periodo: `Del ${r.inicio.split('-').reverse().join('/')} al ${r.fin.split('-').reverse().join('/')}`,
+    dias: `${f.dias} días de ${diffDays(r.inicio, r.fin) + 1} · ${r.filas.length} habitaciones ocupadas`,
+    lineas: FACTURAS.filter(([k]) => r.facturas[k] > 0).map(([k, nom]) => [`${nom} (factura de ${fmtEUR(r.facturas[k])})`, fmtEUR(f.partes[k] || 0)]),
+    total: f.total, tope, aPagar: f.aCobrar,
+    pago: `Con la mensualidad, antes del ${venc.split('-').reverse().join('/')}`,
+    iban,
+    telefono: f.k.telefono || '',
+    nombreArchivo: `Suministros ${f.k.inquilino} ${r.inicio.slice(0, 7)}.png`.replace(/[^\w .-]/g, ''),
+  };
+}
+
+/** Dibuja el ticket en un lienzo (sin librerías). */
+function dibujarTicket(d) {
+  const W = 720, PAD = 48, esc = 2;
+  const FONT = '-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  const filas = [];
+  const add = (tipo, a, b) => filas.push({ tipo, a, b });
+  add('titulo', 'Suministros');
+  add('sub', d.piso);
+  if (d.emisor) add('sub', d.emisor);
+  add('hr');
+  add('etq', 'Inquilino'); add('fuerte', `${d.inquilino}`); add('norm', d.habitacion);
+  add('esp');
+  add('etq', 'Periodo de las facturas'); add('norm', d.periodo); add('sub', d.dias);
+  add('hr');
+  for (const [a, b] of d.lineas) add('linea', a, b);
+  if (d.tope) { add('linea', 'Total suministros', fmtEUR(d.total)); add('linea', 'Incluido en la renta', `− ${fmtEUR(Math.min(d.tope, d.total))}`); }
+  add('hr2');
+  add('total', 'A pagar', fmtEUR(d.aPagar));
+  add('esp');
+  add('sub', d.pago);
+  if (d.iban) add('sub', `Transferencia a ${d.iban}`);
+  add('pie', 'Reparto en proporción a los días de ocupación de cada habitación.');
+  const alto = { titulo: 58, sub: 30, hr: 34, hr2: 30, etq: 28, fuerte: 40, norm: 34, esp: 16, linea: 44, total: 64, pie: 56 };
+  const H = PAD * 2 + filas.reduce((a, f) => a + alto[f.tipo], 0);
+  c.width = W * esc; c.height = H * esc; ctx.scale(esc, esc);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#1f5c4a'; ctx.fillRect(0, 0, W, 10);
+  let y = PAD;
+  const texto = (t, x, size, peso = 400, color = '#1c2421', alinea = 'left') => { ctx.font = `${peso} ${size}px ${FONT}`; ctx.fillStyle = color; ctx.textAlign = alinea; ctx.fillText(t, x, y); };
+  const cortar = (t, max, size, peso) => { ctx.font = `${peso} ${size}px ${FONT}`; if (ctx.measureText(t).width <= max) return t; while (t.length > 3 && ctx.measureText(`${t}…`).width > max) t = t.slice(0, -1); return `${t}…`; };
+  for (const f of filas) {
+    const h = alto[f.tipo];
+    if (f.tipo === 'titulo') { y += 36; texto(f.a, PAD, 36, 750, '#1f5c4a'); y += h - 36; continue; }
+    if (f.tipo === 'hr' || f.tipo === 'hr2') { ctx.strokeStyle = f.tipo === 'hr2' ? '#1c2421' : '#d9dfdc'; ctx.lineWidth = f.tipo === 'hr2' ? 2 : 1; ctx.setLineDash(f.tipo === 'hr' ? [6, 6] : []); ctx.beginPath(); ctx.moveTo(PAD, y + h / 2); ctx.lineTo(W - PAD, y + h / 2); ctx.stroke(); ctx.setLineDash([]); y += h; continue; }
+    if (f.tipo === 'esp') { y += h; continue; }
+    y += h - 10;
+    if (f.tipo === 'sub') texto(cortar(f.a, W - PAD * 2, 19, 400), PAD, 19, 400, '#5d6863');
+    if (f.tipo === 'etq') texto(f.a.toUpperCase(), PAD, 15, 650, '#7a8580');
+    if (f.tipo === 'fuerte') texto(cortar(f.a, W - PAD * 2, 28, 700), PAD, 28, 700);
+    if (f.tipo === 'norm') texto(cortar(f.a, W - PAD * 2, 22, 450), PAD, 22, 450);
+    if (f.tipo === 'linea') { texto(cortar(f.a, W - PAD * 2 - 170, 21, 450), PAD, 21, 450); texto(f.b, W - PAD, 22, 650, '#1c2421', 'right'); }
+    if (f.tipo === 'total') { texto(f.a, PAD, 30, 750); texto(f.b, W - PAD, 40, 800, '#1f5c4a', 'right'); }
+    if (f.tipo === 'pie') texto(f.a, PAD, 15, 400, '#9aa39f');
+    y += 10;
+  }
+  return c;
+}
+
+function verTickets(lista) {
+  const v = document.getElementById('visor');
+  const tickets = lista.map((d) => ({ d, canvas: dibujarTicket(d) }));
+  v.innerHTML = String(html`
+    <div class="visor-barra">
+      <div class="visor-tit"><strong>${tickets.length === 1 ? `Ticket de ${lista[0].inquilino}` : `${tickets.length} tickets`}</strong><small>Para enviar a cada inquilino</small></div>
+      <button type="button" class="icon-btn" data-t="cerrar" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="visor-cuerpo visor-pdf tickets">${tickets.map((t, i) => html`
+      <figure class="ticket">
+        <img alt="Ticket de ${t.d.inquilino}" src="${t.canvas.toDataURL('image/png')}">
+        <figcaption>
+          <button type="button" class="btn btn-sm btn-primary" data-t="compartir" data-i="${i}">Enviar imagen</button>
+          ${t.d.telefono ? html`<button type="button" class="btn btn-sm" data-t="whatsapp" data-i="${i}">WhatsApp con texto</button>` : ''}
+          <button type="button" class="btn btn-sm btn-ghost" data-t="descargar" data-i="${i}">Descargar</button>
+        </figcaption>
+      </figure>`)}</div>`);
+  const blob = (i) => new Promise((r) => tickets[i].canvas.toBlob(r, 'image/png'));
+  v.onclick = async (e) => {
+    const b = e.target.closest('[data-t]');
+    if (e.target === v || b?.dataset.t === 'cerrar') { v.close(); return; }
+    if (!b) return;
+    const t = tickets[Number(b.dataset.i)];
+    if (b.dataset.t === 'compartir') {
+      const file = new File([await blob(Number(b.dataset.i))], t.d.nombreArchivo, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) navigator.share({ files: [file], title: `Suministros · ${t.d.inquilino}` }).catch(() => {});
+      else descargarBlob(file, t.d.nombreArchivo);
+    }
+    if (b.dataset.t === 'descargar') descargarBlob(await blob(Number(b.dataset.i)), t.d.nombreArchivo);
+    if (b.dataset.t === 'whatsapp') {
+      const d = t.d;
+      const txt = [`Hola ${d.inquilino.split(' ')[0]}, te paso tu parte de los suministros (${d.periodo.toLowerCase()}):`, ...d.lineas.map(([a, x]) => `• ${a}: ${x}`), d.tope ? `• Incluido en la renta: −${fmtEUR(Math.min(d.tope, d.total))}` : '', `*A pagar: ${fmtEUR(d.aPagar)}*`, d.pago + (d.iban ? `, por transferencia a ${d.iban}` : '') + '.'].filter(Boolean).join('\n');
+      window.open(`https://wa.me/${telefonoWhatsApp(d.telefono)}?text=${encodeURIComponent(txt)}`, '_blank');
+    }
+  };
+  if (!v.open) v.showModal();
+}
+
+function descargarBlob(b, nombre) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = nombre;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}

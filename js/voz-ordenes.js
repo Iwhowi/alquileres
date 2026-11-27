@@ -194,7 +194,7 @@ export function ordenar(original, s, hoy) {
   // Ir a una pantalla
   if (/^(abre|abrir|ve a|vete a|ir a|vamos a|llevame a|lleva me a|ensename|muestrame|mostrar|ver|quiero ver|pasa a)\b/.test(t)) {
     for (const [re, ruta, nombre] of SECCIONES) if (re.test(t) && !(ruta === 'pisos' && piso)) return { tipo: 'ir', ruta: `#/${ruta}`, resumen: `Abro ${nombre}` };
-    if (piso) return { tipo: 'ir', ruta: `#/pisos/${piso.id}`, resumen: `Abro ${piso.nombre}` };
+    if (piso) return { tipo: 'ir', ruta: `#/piso/${piso.id}`, resumen: `Abro ${piso.nombre}` };
   }
 
   // Alta de inquilino / nuevo contrato
@@ -431,7 +431,7 @@ export function ordenar(original, s, hoy) {
   // «Abre el contrato de Miguel», «edita el piso de Sigüenza»
   if (/^(abre|edita|editar|ver|muestrame|ensename)\b/.test(t)) {
     if (/\bcontrato\b/.test(t)) { const k = contratoDe(t, s, hoy); if (k) return { tipo: 'form', form: 'contrato', id: k.id, campos: {}, faltan: [], resumen: `Contrato de ${k.inquilino}` }; }
-    if (piso) return { tipo: 'ir', ruta: `#/pisos/${piso.id}`, resumen: `Abro ${piso.nombre}` };
+    if (piso) return { tipo: 'ir', ruta: `#/piso/${piso.id}`, resumen: `Abro ${piso.nombre}` };
   }
   return null;
 }
